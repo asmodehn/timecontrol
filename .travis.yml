@@ -1,0 +1,22 @@
+dist: xenial
+language: python
+
+branches:
+  except:
+    - gh-pages
+
+python:
+  - '3.7'
+  #- '3.8'
+
+
+install:
+  - pipenv install --dev --pre --skip-lock --sequential
+
+script:
+  - python -m timecontrol.tests
+  - pytest -s tests
+
+notifications:
+  email: false
+
