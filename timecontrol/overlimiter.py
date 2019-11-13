@@ -1,11 +1,17 @@
 import time
 
-from timecontrol.underlimiter import UnderTimeLimit
+
+class OverTimeLimit(Exception):
+    def __init__(self, message, elapsed, expected):
+        self.elapsed = elapsed
+        self.expected = expected
+        super(OverTimeLimit, self).__init__(message)
 
 
 class OverLimiter:
     """
-    A way to throttle successive calls
+    A way to trigger successive calls
+    Note : To make any sense at all, this has to be a lax requirement. otherwise it s just a normal 'asap' call.
     """
 
     def __init__(self, period, timer=time.time):
@@ -21,18 +27,23 @@ class OverLimiter:
 
             # Measure time
             now = self.timer()
+
+            if fun:
+                res = fun(*args, **kwargs)
+            else:
+                res = None  # else Noop -> returns None
+            # TODO :  deal with return problem... (except cannot simply not return...)
+
+            otl = None
             if now - self._last > self.period:
                 # Raise Limit exception if too slow.
-                raise OverTimeLimit("Over Time Limit", elapsed=now-self._last, expected=self.period)
+                otl = OverTimeLimit("Over Time Limit", elapsed=now-self._last, expected=self.period)
+
+            self._last = now
+            if otl:
+                raise otl
             else:
-                if fun:
-                    return fun(*args, **kwargs)
-                # else Noop -> returns None
+                return res
+
         return wrapper
 
-
-class OverTimeLimit(Exception):
-    def __init__(self, message, elapsed, expected):
-        self.elapsed = elapsed
-        self.expected = expected
-        super(OverTimeLimit, self).__init__(message)
