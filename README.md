@@ -28,3 +28,5 @@ Async model allows you to bypass the limits of only one controlflow, by running 
 Note : We choose to not deal with threads here, as they usually bring more problems than they solve.
 
 ## DISCLAIMER : Currently in development, not ready for prime time use just yet.
+
+### TODO : documentation...
