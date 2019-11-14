@@ -14,6 +14,8 @@ from timecontrol.underlimiter import UnderTimeLimit
 class Function(Mapping):
     """
     Actually a (pure) Function of one argument. Implemented as a mapping, which it is anyway.
+    # TODO : add (implicit) functionality test (detected by pytest, leveraging hypothesis)
+    # TODO : this is 'internal' so we can hook up and use trace, profile, etc. for debugging/introspection purposes...
     """
     def __init__(self, impl: typing.Callable, sleeper=None):  # should be a lambda, or something without side effects.
         self.map = {}  # Note : this map is not a trace, and we do NOT need a trace here (function independent of time)
@@ -25,7 +27,7 @@ class Function(Mapping):
     # Note : we do NOT want this to be callable,
     #        to make it explicit this is not an action/process, but a (abstract - lazy) structure.
 
-    def __getitem__(self, item):
+    def __getitem__(self, item: typing.Hashable):
         try:
             # TODO : maybe use lru cache instead, but find how to provide direct access to the cache...
             # and hook the timer when actually executing...
@@ -57,7 +59,7 @@ class Function(Mapping):
 #   commands as decorated python procedures (coroutines and lambda still supported)
 
 # TODO: goal here is to simplify things by marking part of your program functional
-#   => In that case many tooling (trace, profiling and stuff will be disabled by default)
+#   => In that case many tooling (trace, profiling and stuff will be disabled by default). The call will be considered "internal".
 
 
 if __name__ == '__main__':
