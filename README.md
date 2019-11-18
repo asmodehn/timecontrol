@@ -1,4 +1,4 @@
-# timecontrol
+# timecontrol [![Build Status](https://travis-ci.org/asmodehn/timecontrol.svg?branch=master)](https://travis-ci.org/asmodehn/timecontrol)
 Package providing time control capabilities to your async code.
 
 There are multiple ways to use them (as decorators, or other python constructs).
