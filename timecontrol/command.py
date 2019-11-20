@@ -6,6 +6,7 @@ import asyncio
 import datetime
 import random
 import time
+import inspect
 from collections.abc import Mapping
 
 
@@ -27,27 +28,27 @@ class CommandRunner(Mapping):
 
     def __init__(self, impl, args, kwargs, timer = datetime.datetime.now, sleeper=None):
         self.log = EventLog(timer=timer)
-        self.impl = impl
+        self._impl = impl
 
         # This is here only to allow dependency injection for testing
-        self.sleeper = sleeper
-        if self.sleeper is None:
-            self.sleeper = asyncio.sleep if asyncio.iscoroutinefunction(impl) else time.sleep
+        self._sleeper = sleeper
+        if self._sleeper is None:
+            self._sleeper = asyncio.sleep if asyncio.iscoroutinefunction(impl) else time.sleep
 
         # Note : instance is supposed to be in args, when decorating instance methods...
-        self.args = args
-        self.kwargs = kwargs
+        self._args = args
+        self._kwargs = kwargs
 
     def __call__(self):
         while True:
             try:
                 #  We cannot assume idempotent like for a function. call in all cases.
-                res = self.log(self.impl(*self.args, **self.kwargs))
+                res = self.log(self._impl(*self._args, **self._kwargs))
                 return res
             except UnderTimeLimit as utl:
                 # call is forbidden now. we have no choice but wait.
                 # We will never know what would have been the result now.
-                self.sleeper(utl.expected - utl.elapsed)
+                self._sleeper(utl.expected - utl.elapsed)
 
     def __getitem__(self, item):
         return self.log.__getitem__(item)
@@ -69,15 +70,31 @@ class Command:
         self.sleeper = sleeper
 
     def __call__(self, impl):
+        nest = self
 
-        def lazyrun(*args, **kwargs):
-            # Note we do need a function here to grab instance as the first argument.
-            # It seems that if we use a class directly, the instance is lost when called,
-            # replaced by the class instance being created.
+        if inspect.isclass(impl):
+            class CmdClassWrapper:
+                def __init__(self, *args, **kwargs):
+                    self._impl = impl(*args, **kwargs)
 
-            return CommandRunner(impl, args, kwargs, timer=self.timer, sleeper=self.sleeper)
+                def __getattr__(self, item):
+                    # forward all unknown attribute to the implementation
+                    return getattr(self._impl, item)
 
-        return lazyrun
+                def __call__(self, *args, **kwargs):
+                    # This is our lazyrun
+                    return CommandRunner(self._impl, args, kwargs, timer=nest.timer, sleeper=nest.sleeper)
+            return CmdClassWrapper
+
+        else:  # function or instance method (bound or unbound, lazyrun will pass the instance as first argument
+            def lazyrun(*args, **kwargs):
+                # Note: we do need a function here to grab instance as the first argument.
+                # It seems that if we use a class directly, the instance is lost when called,
+                # replaced by the class instance being created.
+
+                return CommandRunner(impl, args, kwargs, timer=nest.timer, sleeper=nest.sleeper)
+
+            return lazyrun
         
 
 
@@ -89,7 +106,7 @@ class Command:
 
 if __name__ == '__main__':
 
-    @command
+    @Command()
     def rand(p):
         return random.randint(0, p)
 
