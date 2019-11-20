@@ -8,6 +8,7 @@ import random
 import time
 from collections.abc import Mapping
 
+
 from timecontrol.underlimiter import UnderTimeLimit
 from timecontrol.eventlog import EventLog
 
@@ -16,17 +17,37 @@ from timecontrol.eventlog import EventLog
 #   commands as decorated python procedures (coroutines and lambda still supported)
 
 
-class Command(Mapping):
+class CommandRunner(Mapping):
+    """
+    A command, with always the same arguments.
+    What changes is the time that flows under our feet...
 
-    def __init__(self, timer=datetime.datetime.now):
+    So it is a (pure) function of time.
+    """
+
+    def __init__(self, impl, args, kwargs, timer = datetime.datetime.now, sleeper=None):
         self.log = EventLog(timer=timer)
+        self.impl = impl
+
+        # This is here only to allow dependency injection for testing
+        self.sleeper = sleeper
+        if self.sleeper is None:
+            self.sleeper = asyncio.sleep if asyncio.iscoroutinefunction(impl) else time.sleep
+
+        # Note : instance is supposed to be in args, when decorating instance methods...
+        self.args = args
+        self.kwargs = kwargs
 
     def __call__(self):
-        """Noop command : logging None
-        This is meant to be overridden by a command implementation
-        """
-        res = self.log(None)
-        return res
+        while True:
+            try:
+                #  We cannot assume idempotent like for a function. call in all cases.
+                res = self.log(self.impl(*self.args, **self.kwargs))
+                return res
+            except UnderTimeLimit as utl:
+                # call is forbidden now. we have no choice but wait.
+                # We will never know what would have been the result now.
+                self.sleeper(utl.expected - utl.elapsed)
 
     def __getitem__(self, item):
         return self.log.__getitem__(item)
@@ -37,40 +58,28 @@ class Command(Mapping):
     def __len__(self):
         return self.log.__len__()
 
+    # TODO : add memory limit ??
+    # TODO:maybe another project : memorycontrol
 
-def command(impl, timer=datetime.datetime.now, sleeper=None):
-    if sleeper is None:
-        sleeper = asyncio.sleep if asyncio.iscoroutinefunction(impl) else time.sleep
 
-    class Runner(Command):
-        """
-        A command, with always the same arguments.
-        What changes is the time that flows under our feet...
+class Command:
 
-        So it is a (pure) function of time.
-        """
+    def __init__(self, timer=datetime.datetime.now, sleeper=None):
+        self.timer = timer
+        self.sleeper = sleeper
 
-        def __init__(self, *args, **kwargs):
-            self.impl = impl
-            self.args = args
-            self.kwargs = kwargs
-            super(Runner, self).__init__(timer=timer)
+    def __call__(self, impl):
 
-        def __call__(self):
-            while True:
-                try:
-                    #  We cannot assume idempotent like for a function. call in all cases.
-                    res = self.log(self.impl(*self.args, **self.kwargs))
-                    return res
-                except UnderTimeLimit as utl:
-                    # call is forbidden now. we have no choice but wait.
-                    # We will never know what would have been the result now.
-                    sleeper(utl.expected - utl.elapsed)
+        def lazyrun(*args, **kwargs):
+            # Note we do need a function here to grab instance as the first argument.
+            # It seems that if we use a class directly, the instance is lost when called,
+            # replaced by the class instance being created.
 
-        # TODO : add memory limit ??
-        # TODO:maybe another project : memorycontrol
+            return CommandRunner(impl, args, kwargs, timer=self.timer, sleeper=self.sleeper)
 
-    return Runner
+        return lazyrun
+        
+
 
 
 # TODO : a command can be observed, and "supposed" a function, to integrate in current system (simulation).
