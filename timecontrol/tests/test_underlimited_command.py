@@ -1,6 +1,6 @@
 import unittest
 
-from ..command import command, Command
+from ..command import Command, CommandRunner
 from ..underlimiter import UnderLimiter, UnderTimeLimit
 
 
@@ -27,16 +27,14 @@ class TestUnderLimitedCommand(unittest.TestCase):
         self.command_call = False
 
     def test_command_underlimit(self):
-        lc = command(UnderLimiter(period=3, timer=self.timer)(self.cmdimpl),
-                     timer=self.timer,
-                     sleeper=self.sleeper)
+        lc = Command(timer=self.timer, sleeper=self.sleeper)(UnderLimiter(period=3, timer=self.timer)(self.cmdimpl))
 
         assert self.command_call == False
 
         # Underlimit doesnt trigger for command instantiation
         lc_one = lc(1, "2", "etc")
         lc_two = lc(2, "42", "etc")
-        assert isinstance(lc_one, Command)
+        assert isinstance(lc_one, CommandRunner)
         assert self.slept == 0
 
         assert len(lc_one) == 0
