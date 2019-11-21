@@ -4,6 +4,8 @@ Changelog
 
 (unreleased)
 ------------
+- Adding aiounittest as requirement. [AlexV]
+- V0.2.1. [AlexV]
 - Fixing command's sleeper argument so we do not override default by
   passing None. [AlexV]
 - Fixing underlimiteer so it forwards the async nature of the wrapped
