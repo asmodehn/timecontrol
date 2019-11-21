@@ -6,7 +6,7 @@ import setuptools
 
 # Ref : https://packaging.python.org/single_source_version/#single-sourcing-the-version
 # runpy is safer and a better habit than exec
-version = runpy.run_path('filefinder2/_version.py')
+version = runpy.run_path('timecontrol/_version.py')
 __version__ = version.get('__version__')
 
 
