@@ -4,6 +4,10 @@ Changelog
 
 (unreleased)
 ------------
+- Fixing main in self tests to remove function tests. [AlexV]
+- Fixing version file path also removing underlimit test for function.
+  [AlexV]
+- V0.1.1. [AlexV]
 - Adding package managemnt code... [AlexV]
 - Removing function feature. not ready for prime time just yet. [AlexV]
 - Now command supporting to decorate a class. [AlexV]
