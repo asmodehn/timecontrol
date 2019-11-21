@@ -26,7 +26,8 @@ class CommandRunner(Mapping):
     So it is a (pure) function of time, provided good enough time resolution.
     """
 
-    def __init__(self, impl, args, kwargs, timer = datetime.datetime.now, sleeper=time.sleep):
+    def __init__(self, impl, args, kwargs, timer = datetime.datetime.now, sleeper=None):
+        sleeper = time.sleep if sleeper is None else sleeper
         self.log = EventLog(timer=timer)
         self._impl = impl
 
@@ -69,7 +70,8 @@ class CommandASyncRunner(CommandRunner):
 
     """
 
-    def __init__(self, impl, args, kwargs, timer=datetime.datetime.now, sleeper=asyncio.sleep):
+    def __init__(self, impl, args, kwargs, timer=datetime.datetime.now, sleeper=None):
+        sleeper = asyncio.sleep if sleeper is None else sleeper
         super(CommandASyncRunner, self).__init__(impl=impl, args=args, kwargs=kwargs, timer=timer, sleeper=sleeper)
 
     async def __call__(self):  # we override the synchronous call with an asynchronous one
