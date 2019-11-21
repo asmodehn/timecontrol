@@ -23,17 +23,15 @@ class CommandRunner(Mapping):
     A command, with always the same arguments.
     What changes is the time that flows under our feet...
 
-    So it is a (pure) function of time.
+    So it is a (pure) function of time, provided good enough time resolution.
     """
 
-    def __init__(self, impl, args, kwargs, timer = datetime.datetime.now, sleeper=None):
+    def __init__(self, impl, args, kwargs, timer = datetime.datetime.now, sleeper=time.sleep):
         self.log = EventLog(timer=timer)
         self._impl = impl
 
         # This is here only to allow dependency injection for testing
         self._sleeper = sleeper
-        if self._sleeper is None:
-            self._sleeper = asyncio.sleep if asyncio.iscoroutinefunction(impl) else time.sleep
 
         # Note : instance is supposed to be in args, when decorating instance methods...
         self._args = args
@@ -63,6 +61,45 @@ class CommandRunner(Mapping):
     # TODO:maybe another project : memorycontrol
 
 
+class CommandASyncRunner:
+    """
+    A command, with always the same arguments.
+    What changes is the time that flows under our feet...
+
+    So it is a (pure) function of time, provided good enough time resolution.
+    """
+
+    def __init__(self, impl, args, kwargs, timer=datetime.datetime.now, sleeper=asyncio.sleep):
+        self.log = EventLog(timer=timer)
+        self._impl = impl
+
+        # This is here only to allow dependency injection for testing
+        self._sleeper = sleeper
+
+        # Note : instance is supposed to be in args, when decorating instance methods...
+        self._args = args
+        self._kwargs = kwargs
+
+    async def __call__(self):
+        while True:
+            try:
+                #  We cannot assume idempotent like for a function. call in all cases.
+                res = self.log(await self._impl(*self._args, **self._kwargs))
+                return res
+            except UnderTimeLimit as utl:
+                # call is forbidden now. we have no choice but wait.
+                # We will never know what would have been the result now.
+                self._sleeper(utl.expected - utl.elapsed)
+
+    def __getitem__(self, item):
+        return self.log.__getitem__(item)
+
+    def __iter__(self):
+        return self.log.__iter__()
+
+    def __len__(self):
+        return self.log.__len__()
+
 class Command:
 
     def __init__(self, timer=datetime.datetime.now, sleeper=None):
@@ -83,7 +120,11 @@ class Command:
 
                 def __call__(self, *args, **kwargs):
                     # This is our lazyrun
-                    return CommandRunner(self._impl, args, kwargs, timer=nest.timer, sleeper=nest.sleeper)
+                    if asyncio.iscoroutinefunction(self._impl.__call__):
+                        return CommandASyncRunner(self._impl, args, kwargs, timer=nest.timer, sleeper=nest.sleeper)
+                    else:
+                        return CommandRunner(self._impl, args, kwargs, timer=nest.timer, sleeper=nest.sleeper)
+
             return CmdClassWrapper
 
         else:  # function or instance method (bound or unbound, lazyrun will pass the instance as first argument
@@ -91,8 +132,10 @@ class Command:
                 # Note: we do need a function here to grab instance as the first argument.
                 # It seems that if we use a class directly, the instance is lost when called,
                 # replaced by the class instance being created.
-
-                return CommandRunner(impl, args, kwargs, timer=nest.timer, sleeper=nest.sleeper)
+                if asyncio.iscoroutinefunction(impl):
+                    return CommandASyncRunner(impl, args, kwargs, timer=nest.timer, sleeper=nest.sleeper)
+                else:
+                    return CommandRunner(impl, args, kwargs, timer=nest.timer, sleeper=nest.sleeper)
 
             return lazyrun
         
