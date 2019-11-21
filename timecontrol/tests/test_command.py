@@ -1,14 +1,21 @@
-import unittest
+
 
 from ..command import Command, CommandRunner
 
+import aiounittest
 
-class TestCommand(unittest.TestCase):
+
+class TestCommand(aiounittest.AsyncTestCase):
 
     def timer(self, incr=0):
         return self.clock
 
     def impl(self, *args):
+        # args ignored
+        self.command_call = True
+        return self.result
+
+    async def impl_coro(self, *args):
         # args ignored
         self.command_call = True
         return self.result
@@ -44,6 +51,34 @@ class TestCommand(unittest.TestCase):
         self.clock = 3
 
         c_one()
+        assert len(c_one) == 2
+        assert c_one[old_clock] == [self.result, self.result]
+        assert c_one[self.clock] == [self.result]
+
+    async def test_command_coro(self):
+        # bound method or usual procedure usecase
+        c = Command(timer=self.timer)(self.impl_coro)
+        assert self.command_call == False
+        c_one = c(1, "2", "etc")
+        assert isinstance(c_one, CommandRunner)
+
+        assert len(c_one) == 0
+
+        # one call will store in log
+        await c_one()
+        assert len(c_one) == 1
+        assert c_one[self.clock] == [self.result]
+
+        # another call will store in same log again.
+        await c_one()
+        assert len(c_one) == 1
+        assert c_one[self.clock] == [self.result, self.result]
+
+        # incrementing clock with create a new log
+        old_clock = self.clock
+        self.clock = 3
+
+        await c_one()
         assert len(c_one) == 2
         assert c_one[old_clock] == [self.result, self.result]
         assert c_one[self.clock] == [self.result]
@@ -87,7 +122,6 @@ class TestCommand(unittest.TestCase):
         assert len(c_one) == 2
         assert c_one[old_clock] == [self.result, self.result]
         assert c_one[self.clock] == [self.result]
-
 
     def test_command_class(self):
         test_result = self.result
