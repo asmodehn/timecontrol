@@ -61,26 +61,18 @@ class CommandRunner(Mapping):
     # TODO:maybe another project : memorycontrol
 
 
-class CommandASyncRunner:
+class CommandASyncRunner(CommandRunner):
     """
     A command, with always the same arguments.
-    What changes is the time that flows under our feet...
 
-    So it is a (pure) function of time, provided good enough time resolution.
+    This is an async specialization of the command runner
+
     """
 
     def __init__(self, impl, args, kwargs, timer=datetime.datetime.now, sleeper=asyncio.sleep):
-        self.log = EventLog(timer=timer)
-        self._impl = impl
+        super(CommandASyncRunner, self).__init__(impl=impl, args=args, kwargs=kwargs, timer=timer, sleeper=sleeper)
 
-        # This is here only to allow dependency injection for testing
-        self._sleeper = sleeper
-
-        # Note : instance is supposed to be in args, when decorating instance methods...
-        self._args = args
-        self._kwargs = kwargs
-
-    async def __call__(self):
+    async def __call__(self):  # we override the synchronous call with an asynchronous one
         while True:
             try:
                 #  We cannot assume idempotent like for a function. call in all cases.
@@ -91,14 +83,6 @@ class CommandASyncRunner:
                 # We will never know what would have been the result now.
                 self._sleeper(utl.expected - utl.elapsed)
 
-    def __getitem__(self, item):
-        return self.log.__getitem__(item)
-
-    def __iter__(self):
-        return self.log.__iter__()
-
-    def __len__(self):
-        return self.log.__len__()
 
 class Command:
 
