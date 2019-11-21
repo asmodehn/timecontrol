@@ -5,6 +5,9 @@ verify_ssl = true
 
 [dev-packages]
 pytest = "*"
+gitchangelog = "*"
+twine = "*"
+wheel = "*"
 
 [packages]
 
