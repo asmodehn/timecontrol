@@ -1,9 +1,9 @@
-import unittest
+import aiounittest
 
 from ..underlimiter import UnderLimiter, UnderTimeLimit
 
 
-class TestUnderLimiter(unittest.TestCase):
+class TestUnderLimiter(aiounittest.AsyncTestCase):
 
     def timer(self, incr=0):
         return self.clock
@@ -13,6 +13,14 @@ class TestUnderLimiter(unittest.TestCase):
         return self.result
 
     def limited_bis(self):
+        self.limited_bis_call = True
+        return self.result
+
+    async def limited_coro(self):
+        self.limited_call = True
+        return self.result
+
+    async def limited_bis_coro(self):
         self.limited_bis_call = True
         return self.result
 
@@ -35,6 +43,15 @@ class TestUnderLimiter(unittest.TestCase):
         limited()
         assert self.limited_call == True
 
+    async def test1_one_overlimit_coro(self):
+        assert self.clock == 0
+        self.clock = 7
+
+        limited = self.limiter(self.limited_coro)
+
+        await limited()
+        assert self.limited_call == True
+
     def test1_one_underlimit(self):
         assert self.clock == 0
         self.clock = 3
@@ -42,6 +59,17 @@ class TestUnderLimiter(unittest.TestCase):
         limited = self.limiter(self.limited)
         with self.assertRaises(UnderTimeLimit) as utl:
             limited()
+        assert utl.exception.elapsed == self.clock
+        assert utl.exception.expected == self.limiter.period
+        assert self.limited_call == False
+
+    async def test1_one_underlimit_coro(self):
+        assert self.clock == 0
+        self.clock = 3
+
+        limited = self.limiter(self.limited_coro)
+        with self.assertRaises(UnderTimeLimit) as utl:
+            await limited()
         assert utl.exception.elapsed == self.clock
         assert utl.exception.expected == self.limiter.period
         assert self.limited_call == False
@@ -59,6 +87,21 @@ class TestUnderLimiter(unittest.TestCase):
         self.clock += 7
 
         limited_bis()
+        assert self.limited_bis_call == True
+
+    async def test2_multi_overlimit_coro(self):
+        assert self.clock == 0
+        self.clock = 7
+
+        limited = self.limiter(self.limited_coro)
+        limited_bis = self.limiter(self.limited_bis_coro)
+
+        await limited()
+        assert self.limited_call == True
+
+        self.clock += 7
+
+        await limited_bis()
         assert self.limited_bis_call == True
 
     def test2_multi_underlimit(self):
@@ -82,6 +125,27 @@ class TestUnderLimiter(unittest.TestCase):
         assert utl.exception.expected == self.limiter.period
         assert self.limited_bis_call == False
 
+    async def test2_multi_underlimit_coro(self):
+        assert self.clock == 0
+        self.clock = 3
+
+        limited = self.limiter(self.limited_coro)
+        limited_bis = self.limiter(self.limited_bis_coro)
+
+        with self.assertRaises(UnderTimeLimit) as utl:
+            await limited()
+        assert utl.exception.elapsed == self.clock
+        assert utl.exception.expected == self.limiter.period
+        assert self.limited_call == False
+
+        self.clock += 1  # note : if we get over period we will pass since previous was not called.
+
+        with self.assertRaises(UnderTimeLimit) as utl:
+            await limited_bis()
+        assert utl.exception.elapsed == self.clock
+        assert utl.exception.expected == self.limiter.period
+        assert self.limited_bis_call == False
+
     def test3_multi_overunder(self):
         assert self.clock == 0
         self.clock = 7
@@ -96,6 +160,24 @@ class TestUnderLimiter(unittest.TestCase):
 
         with self.assertRaises(UnderTimeLimit) as utl:
             limited_bis()
+        assert utl.exception.elapsed == 3
+        assert utl.exception.expected == self.limiter.period
+        assert self.limited_bis_call == False
+
+    async def test3_multi_overunder_coro(self):
+        assert self.clock == 0
+        self.clock = 7
+
+        limited = self.limiter(self.limited_coro)
+        limited_bis = self.limiter(self.limited_bis_coro)
+
+        await limited()
+        assert self.limited_call == True
+
+        self.clock += 3
+
+        with self.assertRaises(UnderTimeLimit) as utl:
+            await limited_bis()
         assert utl.exception.elapsed == 3
         assert utl.exception.expected == self.limiter.period
         assert self.limited_bis_call == False
@@ -120,4 +202,21 @@ class TestUnderLimiter(unittest.TestCase):
         assert self.limited_bis_call == True
 
 
+    async def test3_multi_underover_coro(self):
+        assert self.clock == 0
+        self.clock = 3
+
+        limited = self.limiter(self.limited_coro)
+        limited_bis = self.limiter(self.limited_bis_coro)
+
+        with self.assertRaises(UnderTimeLimit) as utl:
+            await limited()
+        assert utl.exception.elapsed == self.clock
+        assert utl.exception.expected == self.limiter.period
+        assert self.limited_call == False
+
+        self.clock += 7
+
+        await limited_bis()
+        assert self.limited_bis_call == True
 
