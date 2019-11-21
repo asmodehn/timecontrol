@@ -8,9 +8,9 @@ uses integrated python tools only.
 
 # import your test modules
 if __package__ is not None:
-    from . import test_underlimiter, test_overlimiter, test_function, test_command, test_underlimited_function, test_underlimited_command
+    from . import test_underlimiter, test_overlimiter, test_command, test_underlimited_command
 else:
-    import test_underlimiter, test_overlimiter, test_function, test_command, test_underlimited_function, test_underlimited_command
+    import test_underlimiter, test_overlimiter, test_command, test_underlimited_command
 
 # initialize the test suite
 loader = unittest.TestLoader()
@@ -19,9 +19,7 @@ suite = unittest.TestSuite()
 # add tests to the test suite
 suite.addTests(loader.loadTestsFromModule(test_underlimiter))
 suite.addTests(loader.loadTestsFromModule(test_overlimiter))
-suite.addTests(loader.loadTestsFromModule(test_function))
 suite.addTests(loader.loadTestsFromModule(test_command))
-suite.addTests(loader.loadTestsFromModule(test_underlimited_function))
 suite.addTests(loader.loadTestsFromModule(test_underlimited_command))
 
 # initialize a runner, pass it your suite and run it
