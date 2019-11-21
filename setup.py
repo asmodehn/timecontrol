@@ -91,6 +91,7 @@ setuptools.setup(
     url='https://github.com/asmodehn/timecontrol',
     packages=['timecontrol'],
     install_requires=[
+        'aiounittest'
     ],
     cmdclass={
         'prepare_release': PrepareReleaseCommand,
