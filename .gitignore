@@ -1,0 +1,5 @@
+/timecontrol.egg-info/
+/dist/
+/build/
+/.eggs/
+/Pipfile.lock
