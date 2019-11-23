@@ -75,10 +75,11 @@ class PublishCommand(setuptools.Command):
         # os.system("python setup.py sdist bdist_wheel upload")
         # NEW way:
         # Ref: https://packaging.python.org/distributing/
-        subprocess.check_call("twine upload dist/*", shell=True)  # TODO : handle authentication...
+        subprocess.check_call("twine upload dist/*", shell=True)  # TODO : handle authentication... (keyring...)
 
         subprocess.check_call("git tag -a {0} -m 'version {0}'".format(__version__), shell=True)
         subprocess.check_call("git push --tags", shell=True)
+        # TODO : gitflow option of merging develop into master ?
         sys.exit()
 
 
@@ -91,6 +92,7 @@ setuptools.setup(
     url='https://github.com/asmodehn/timecontrol',
     packages=['timecontrol'],
     install_requires=[
+        'aiounittest'
     ],
     cmdclass={
         'prepare_release': PrepareReleaseCommand,
