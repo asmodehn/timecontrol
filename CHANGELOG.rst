@@ -2,8 +2,16 @@ Changelog
 =========
 
 
-(unreleased)
+0.2.2 (2019-11-23)
 ------------
+- Adapting our async sleep to routine or coroutine sleepers. [AlexV]
+- Quickfix patching asyncio.sleep not awaited. [AlexV]
+- Added few comments in setup.py. [AlexV]
+
+
+0.2.1 (2019-11-21)
+------------------
+- V0.2.1. [AlexV]
 - Adding aiounittest as requirement. [AlexV]
 - V0.2.1. [AlexV]
 - Fixing command's sleeper argument so we do not override default by
