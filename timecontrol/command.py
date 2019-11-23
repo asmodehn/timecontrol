@@ -83,8 +83,10 @@ class CommandASyncRunner(CommandRunner):
             except UnderTimeLimit as utl:
                 # call is forbidden now. we have no choice but wait.
                 # We will never know what would have been the result now.
-                await self._sleeper(utl.expected - utl.elapsed)
-
+                if inspect.iscoroutinefunction(self._sleeper):  # because we cannot be sure of our sleeper...
+                    await self._sleeper(utl.expected - utl.elapsed)
+                else:
+                    self._sleeper(utl.expected - utl.elapsed)
 
 class Command:
 
