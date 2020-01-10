@@ -4,7 +4,6 @@ from ..underlimiter import UnderLimiter, UnderTimeLimit
 
 
 class TestUnderLimiter(aiounittest.AsyncTestCase):
-
     def timer(self, incr=0):
         return self.clock
 
@@ -182,7 +181,6 @@ class TestUnderLimiter(aiounittest.AsyncTestCase):
         assert utl.exception.expected == self.limiter.period
         assert self.limited_bis_call == False
 
-
     def test3_multi_underover(self):
         assert self.clock == 0
         self.clock = 3
@@ -201,7 +199,6 @@ class TestUnderLimiter(aiounittest.AsyncTestCase):
         limited_bis()
         assert self.limited_bis_call == True
 
-
     async def test3_multi_underover_coro(self):
         assert self.clock == 0
         self.clock = 3
@@ -219,4 +216,3 @@ class TestUnderLimiter(aiounittest.AsyncTestCase):
 
         await limited_bis()
         assert self.limited_bis_call == True
-

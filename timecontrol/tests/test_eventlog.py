@@ -4,7 +4,6 @@ from ..eventlog import EventLog
 
 
 class TestFunction(unittest.TestCase):
-
     def timer(self, incr=0):
         return self.clock
 
@@ -19,7 +18,7 @@ class TestFunction(unittest.TestCase):
         self.logged_call = False
 
     def test_logger(self):
-        f = EventLog( timer = self.timer)
+        f = EventLog(timer=self.timer)
 
         assert f(42) == 42  # pure side effect
 
@@ -36,4 +35,3 @@ class TestFunction(unittest.TestCase):
         assert f(32) == 32
 
         assert f[1] == [32]
-

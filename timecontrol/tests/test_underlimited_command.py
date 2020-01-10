@@ -7,7 +7,6 @@ from ..underlimiter import UnderLimiter, UnderTimeLimit
 
 
 class TestUnderLimitedCommand(aiounittest.AsyncTestCase):
-
     def timer(self, incr=0):
         return self.clock
 
@@ -34,7 +33,9 @@ class TestUnderLimitedCommand(aiounittest.AsyncTestCase):
         self.command_call = False
 
     def test_command_underlimit(self):
-        lc = Command(timer=self.timer, sleeper=self.sleeper)(UnderLimiter(period=3, timer=self.timer)(self.cmdimpl))
+        lc = Command(timer=self.timer, sleeper=self.sleeper)(
+            UnderLimiter(period=3, timer=self.timer)(self.cmdimpl)
+        )
 
         assert self.command_call == False
 
@@ -55,7 +56,9 @@ class TestUnderLimitedCommand(aiounittest.AsyncTestCase):
         # reset
         self.command_call = False
 
-        assert lc_two() == 42  # another call is also sleeping (sharing the command structure and therefore underlimiter)
+        assert (
+            lc_two() == 42
+        )  # another call is also sleeping (sharing the command structure and therefore underlimiter)
         assert self.slept == 3
         assert self.command_call == True
         assert len(lc_two) == 1  # NOT sharing the time log
@@ -72,7 +75,9 @@ class TestUnderLimitedCommand(aiounittest.AsyncTestCase):
         assert self.command_call == True
 
     async def test_command_underlimit_coro(self):
-        lc = Command(timer=self.timer, sleeper=self.sleeper)(UnderLimiter(period=3, timer=self.timer)(self.cmdimpl_coro))
+        lc = Command(timer=self.timer, sleeper=self.sleeper)(
+            UnderLimiter(period=3, timer=self.timer)(self.cmdimpl_coro)
+        )
 
         assert self.command_call == False
 
@@ -93,7 +98,9 @@ class TestUnderLimitedCommand(aiounittest.AsyncTestCase):
         # reset
         self.command_call = False
 
-        assert await lc_two() == 42  # another call is also sleeping (sharing the command structure and therefore underlimiter)
+        assert (
+            await lc_two() == 42
+        )  # another call is also sleeping (sharing the command structure and therefore underlimiter)
         assert self.slept == 3
         assert self.command_call == True
         assert len(lc_two) == 1  # NOT sharing the time log

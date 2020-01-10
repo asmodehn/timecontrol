@@ -7,13 +7,15 @@ import functools
 
 # TODO : different kinds of !structured! log.
 
-class EventLog(Mapping):   # TODO :see python trace.Trace
 
+class EventLog(Mapping):  # TODO :see python trace.Trace
     def __init__(self, timer=datetime.datetime.now):
         self.timer = timer
         self.map = {}
 
-    def __call__(self, traced_value):  # TODO : enrich this... but python provides only a single return value (even if tuple...)
+    def __call__(
+        self, traced_value
+    ):  # TODO : enrich this... but python provides only a single return value (even if tuple...)
         # if already called for this time, store a sequence (linearizability !)
         self.map[self.timer()] = self.map.get(self.timer(), []) + [traced_value]
         return traced_value
@@ -48,14 +50,13 @@ def log(fun):
     return wrapper
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     import random
 
     # TODO : different API to make the "action with side effect" nature explicit ?
     @log
     def fun(mx):
         return random.randint(0, mx)
-
 
     r = fun(2)
     print(r)
@@ -65,5 +66,3 @@ if __name__ == '__main__':
 
     for e in fun._trace:
         print(e)
-
-

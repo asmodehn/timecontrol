@@ -4,7 +4,6 @@ from ..overlimiter import OverLimiter, OverTimeLimit
 
 
 class TestOverLimiter(unittest.TestCase):
-
     def timer(self, incr=0):
         return self.clock
 
@@ -119,4 +118,3 @@ class TestOverLimiter(unittest.TestCase):
         assert otl.exception.elapsed == 7
         assert otl.exception.expected == self.limiter.period
         assert self.limited_bis_call == True
-

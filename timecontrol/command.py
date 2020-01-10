@@ -26,7 +26,7 @@ class CommandRunner(Mapping):
     So it is a (pure) function of time, provided good enough time resolution.
     """
 
-    def __init__(self, impl, args, kwargs, timer = datetime.datetime.now, sleeper=None):
+    def __init__(self, impl, args, kwargs, timer=datetime.datetime.now, sleeper=None):
         sleeper = time.sleep if sleeper is None else sleeper
         self.log = EventLog(timer=timer)
         self._impl = impl
@@ -72,9 +72,13 @@ class CommandASyncRunner(CommandRunner):
 
     def __init__(self, impl, args, kwargs, timer=datetime.datetime.now, sleeper=None):
         sleeper = asyncio.sleep if sleeper is None else sleeper
-        super(CommandASyncRunner, self).__init__(impl=impl, args=args, kwargs=kwargs, timer=timer, sleeper=sleeper)
+        super(CommandASyncRunner, self).__init__(
+            impl=impl, args=args, kwargs=kwargs, timer=timer, sleeper=sleeper
+        )
 
-    async def __call__(self):  # we override the synchronous call with an asynchronous one
+    async def __call__(
+        self,
+    ):  # we override the synchronous call with an asynchronous one
         while True:
             try:
                 #  We cannot assume idempotent like for a function. call in all cases.
@@ -83,13 +87,15 @@ class CommandASyncRunner(CommandRunner):
             except UnderTimeLimit as utl:
                 # call is forbidden now. we have no choice but wait.
                 # We will never know what would have been the result now.
-                if inspect.iscoroutinefunction(self._sleeper):  # because we cannot be sure of our sleeper...
+                if inspect.iscoroutinefunction(
+                    self._sleeper
+                ):  # because we cannot be sure of our sleeper...
                     await self._sleeper(utl.expected - utl.elapsed)
                 else:
                     self._sleeper(utl.expected - utl.elapsed)
 
-class Command:
 
+class Command:
     def __init__(self, timer=datetime.datetime.now, sleeper=None):
         self.timer = timer
         self.sleeper = sleeper
@@ -98,6 +104,7 @@ class Command:
         nest = self
 
         if inspect.isclass(impl):
+
             class CmdClassWrapper:
                 def __init__(self, *args, **kwargs):
                     self._impl = impl(*args, **kwargs)
@@ -109,33 +116,47 @@ class Command:
                 def __call__(self, *args, **kwargs):
                     # This is our lazyrun
                     if asyncio.iscoroutinefunction(self._impl.__call__):
-                        return CommandASyncRunner(self._impl, args, kwargs, timer=nest.timer, sleeper=nest.sleeper)
+                        return CommandASyncRunner(
+                            self._impl,
+                            args,
+                            kwargs,
+                            timer=nest.timer,
+                            sleeper=nest.sleeper,
+                        )
                     else:
-                        return CommandRunner(self._impl, args, kwargs, timer=nest.timer, sleeper=nest.sleeper)
+                        return CommandRunner(
+                            self._impl,
+                            args,
+                            kwargs,
+                            timer=nest.timer,
+                            sleeper=nest.sleeper,
+                        )
 
             return CmdClassWrapper
 
         else:  # function or instance method (bound or unbound, lazyrun will pass the instance as first argument
+
             def lazyrun(*args, **kwargs):
                 # Note: we do need a function here to grab instance as the first argument.
                 # It seems that if we use a class directly, the instance is lost when called,
                 # replaced by the class instance being created.
                 if asyncio.iscoroutinefunction(impl):
-                    return CommandASyncRunner(impl, args, kwargs, timer=nest.timer, sleeper=nest.sleeper)
+                    return CommandASyncRunner(
+                        impl, args, kwargs, timer=nest.timer, sleeper=nest.sleeper
+                    )
                 else:
-                    return CommandRunner(impl, args, kwargs, timer=nest.timer, sleeper=nest.sleeper)
+                    return CommandRunner(
+                        impl, args, kwargs, timer=nest.timer, sleeper=nest.sleeper
+                    )
 
             return lazyrun
-        
-
 
 
 # TODO : a command can be observed, and "supposed" a function, to integrate in current system (simulation).
 #   This is doable until proven otherwise. Then better model need to be constructed.
 
 
-
-if __name__ == '__main__':
+if __name__ == "__main__":
 
     @Command()
     def rand(p):
@@ -145,4 +166,3 @@ if __name__ == '__main__':
 
     print(rand(42)())
     print(rand(42)())
-

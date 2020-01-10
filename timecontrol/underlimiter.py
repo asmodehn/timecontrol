@@ -7,7 +7,10 @@ class UnderTimeLimit(Exception):
         self.elapsed = elapsed
         self.expected = expected
         super(UnderTimeLimit, self).__init__(message)
+
+
 # Below ?
+
 
 class UnderLimiter:
     """
@@ -21,7 +24,7 @@ class UnderLimiter:
         self._last = self.timer()
         # Setting last as now, to prevent accidental bursts on creation.
 
-    def __call__(self, fun = None):
+    def __call__(self, fun=None):
         """Decorator"""
 
         def wrapper(*args, **kwargs):
@@ -30,7 +33,9 @@ class UnderLimiter:
             now = self.timer()
             if now - self._last < self.period:
                 # Raise Limit exception if too fast.
-                raise UnderTimeLimit("Under Time Limit", elapsed=now-self._last, expected=self.period)
+                raise UnderTimeLimit(
+                    "Under Time Limit", elapsed=now - self._last, expected=self.period
+                )
             else:
                 if fun:
                     self._last = now
@@ -43,7 +48,9 @@ class UnderLimiter:
             now = self.timer()
             if now - self._last < self.period:
                 # Raise Limit exception if too fast.
-                raise UnderTimeLimit("Under Time Limit", elapsed=now-self._last, expected=self.period)
+                raise UnderTimeLimit(
+                    "Under Time Limit", elapsed=now - self._last, expected=self.period
+                )
             else:
                 if fun:
                     self._last = now

@@ -8,7 +8,12 @@ uses integrated python tools only.
 
 # import your test modules
 if __package__ is not None:
-    from . import test_underlimiter, test_overlimiter, test_command, test_underlimited_command
+    from . import (
+        test_underlimiter,
+        test_overlimiter,
+        test_command,
+        test_underlimited_command,
+    )
 else:
     import test_underlimiter, test_overlimiter, test_command, test_underlimited_command
 

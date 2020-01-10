@@ -1,12 +1,9 @@
-
-
 from ..command import Command, CommandRunner, CommandASyncRunner
 
 import aiounittest
 
 
 class TestCommand(aiounittest.AsyncTestCase):
-
     def timer(self, incr=0):
         return self.clock
 
@@ -86,6 +83,7 @@ class TestCommand(aiounittest.AsyncTestCase):
     def test_command_method(self):
         # instance method usecase
         test_result = self.result
+
         class Sample:
             def __init__(self):
                 self.method_call = False
@@ -126,6 +124,7 @@ class TestCommand(aiounittest.AsyncTestCase):
     async def test_command_method_coro(self):
         # instance method usecase
         test_result = self.result
+
         class Sample:
             def __init__(self):
                 self.method_call = False
@@ -202,7 +201,6 @@ class TestCommand(aiounittest.AsyncTestCase):
         assert len(c_one) == 2
         assert c_one[old_clock] == [self.result, self.result]
         assert c_one[self.clock] == [self.result]
-
 
 
 # TODO : ASync !

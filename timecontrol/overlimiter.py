@@ -6,7 +6,10 @@ class OverTimeLimit(Exception):
         self.elapsed = elapsed
         self.expected = expected
         super(OverTimeLimit, self).__init__(message)
+
+
 # Above ?
+
 
 class OverLimiter:
     """
@@ -20,7 +23,7 @@ class OverLimiter:
         self._last = 0
         # Setting last as long time ago, to prevent accidental delays on creation.
 
-    def __call__(self, fun = None):
+    def __call__(self, fun=None):
         """Decorator"""
 
         def wrapper(*args, **kwargs):
@@ -37,7 +40,9 @@ class OverLimiter:
             otl = None
             if now - self._last > self.period:
                 # Raise Limit exception if too slow.
-                otl = OverTimeLimit("Over Time Limit", elapsed=now-self._last, expected=self.period)
+                otl = OverTimeLimit(
+                    "Over Time Limit", elapsed=now - self._last, expected=self.period
+                )
 
             self._last = now
             if otl:
@@ -46,4 +51,3 @@ class OverLimiter:
                 return res
 
         return wrapper
-
