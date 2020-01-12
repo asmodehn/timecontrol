@@ -36,6 +36,7 @@ class TestOverLimiter(unittest.TestCase):
             limited()
         assert otl.exception.elapsed == self.clock
         assert otl.exception.expected == self.limiter.period
+        assert otl.exception.result == self.result
         assert self.limited_call == True
 
     def test1_one_underlimit(self):
@@ -58,6 +59,7 @@ class TestOverLimiter(unittest.TestCase):
             limited()
         assert otl.exception.elapsed == self.clock
         assert otl.exception.expected == self.limiter.period
+        assert otl.exception.result == self.result
         assert self.limited_call == True
 
         self.clock += 7
@@ -66,6 +68,7 @@ class TestOverLimiter(unittest.TestCase):
             limited_bis()
         assert otl.exception.elapsed == 7
         assert otl.exception.expected == self.limiter.period
+        assert otl.exception.result == self.result
         assert self.limited_bis_call == True
 
     def test2_multi_underlimit(self):
@@ -94,6 +97,7 @@ class TestOverLimiter(unittest.TestCase):
             limited()
         assert otl.exception.elapsed == self.clock
         assert otl.exception.expected == self.limiter.period
+        assert otl.exception.result == self.result
         assert self.limited_call == True
 
         self.clock += 3
@@ -117,4 +121,5 @@ class TestOverLimiter(unittest.TestCase):
             limited_bis()
         assert otl.exception.elapsed == 7
         assert otl.exception.expected == self.limiter.period
+        assert otl.exception.result == self.result
         assert self.limited_bis_call == True
