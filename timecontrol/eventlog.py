@@ -1,5 +1,6 @@
 import datetime
 import time
+from collections import OrderedDict
 from collections.abc import Mapping
 
 import functools
@@ -9,22 +10,32 @@ import functools
 
 
 class EventLog(Mapping):  # TODO :see python trace.Trace
+    """
+    This is an event log, as a wallclock-indexed datastore.
+    It is callable, to store a value with the current (wall)clock.
+    """
     def __init__(self, timer=datetime.datetime.now):
         self.timer = timer
-        self.map = {}
+        self.map = OrderedDict()
+
+    @property
+    def last(self):
+        last_timestep = list(self.map.keys())[-1]
+        return next(iter(self.map[last_timestep]))  # just pick one element... (expected indeterminism !)
+        # we take the last in the list (we might have multiple results in same timestep)
 
     def __call__(
         self, traced_value
     ):  # TODO : enrich this... but python provides only a single return value (even if tuple...)
         # if already called for this time, store a sequence (linearizability !)
-        self.map[self.timer()] = self.map.get(self.timer(), []) + [traced_value]
+        self.map[self.timer()] = self.map.get(self.timer(), set()) | {traced_value}
         return traced_value
 
     def __getitem__(self, item):
         if item > self.timer():
             return KeyError
         else:
-            return self.map.get(item, [])
+            return self.map.get(item, set())
 
     def __iter__(self):
         return self.map.__iter__()
