@@ -2,19 +2,17 @@ import time
 
 
 class OverTimeLimit(Exception):
-    def __init__(self, message, elapsed, expected):
+    def __init__(self, message, result, elapsed, expected):
+        self.result = result
         self.elapsed = elapsed
         self.expected = expected
         super(OverTimeLimit, self).__init__(message)
 
 
-# Above ?
-
-
 class OverLimiter:
     """
     A way to trigger successive calls
-    Note : To make any sense at all, this has to be a lax requirement. otherwise it s just a normal 'asap' call.
+    Note : To make any sense at all, this has to be a lax requirement. otherwise we can never correct...
     """
 
     def __init__(self, period, timer=time.time):
@@ -32,22 +30,30 @@ class OverLimiter:
             now = self.timer()
 
             if fun:
-                res = fun(*args, **kwargs)
-            else:
-                res = None  # else Noop -> returns None
-            # TODO :  deal with return problem... (except cannot simply not return...)
+                # call function anyway (lax requirement)
+                result = fun(*args, **kwargs)
 
-            otl = None
-            if now - self._last > self.period:
-                # Raise Limit exception if too slow.
-                otl = OverTimeLimit(
-                    "Over Time Limit", elapsed=now - self._last, expected=self.period
-                )
+                if now - self._last > self.period:
 
-            self._last = now
-            if otl:
-                raise otl
-            else:
-                return res
+                    # Raise Limit exception if too slow.
+                    ret = OverTimeLimit(
+                        "Over Time Limit", result=result, elapsed=now - self._last, expected=self.period
+                    )
+                else:
+                    # need to do that after the > period check !
+                    self._last = now
+
+                    ret = result
+
+                # need to do that after the > period check ! and the exception creation
+                self._last = now
+
+                # TODO : C++ Result design ( cf category theory, etc.) TODO : find reference...
+                if isinstance(ret, Exception):
+                    raise ret
+                else:
+                    return ret
+
+            # else Noop -> returns None
 
         return wrapper

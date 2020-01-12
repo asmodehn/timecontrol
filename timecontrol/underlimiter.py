@@ -9,9 +9,6 @@ class UnderTimeLimit(Exception):
         super(UnderTimeLimit, self).__init__(message)
 
 
-# Below ?
-
-
 class UnderLimiter:
     """
     A way to throttle successive calls.
