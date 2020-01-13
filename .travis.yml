@@ -14,6 +14,7 @@ install:
   - pipenv install --dev --pre --skip-lock --sequential
 
 script:
+  - python -m timecontrol.logs.tests
   - python -m timecontrol.tests
   # TMP - pytest -s tests
 
