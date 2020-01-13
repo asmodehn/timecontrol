@@ -27,7 +27,7 @@ class EventLog(Mapping):  # TODO :see python trace.Trace
     def __call__(
         self, traced_value
     ):  # TODO : enrich this... but python provides only a single return value (even if tuple...)
-        # if already called for this time, store a sequence (linearizability !)
+        # if already called for this time, store a set (undeterminism)
         self.map[self.timer()] = self.map.get(self.timer(), set()) | {traced_value}
         return traced_value
 
