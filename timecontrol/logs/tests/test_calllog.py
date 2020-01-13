@@ -56,7 +56,7 @@ class TestCallLog(unittest.TestCase):
 
     def test_logger_mapping(self):
         # passing timer to log to simulate it
-        f = CallLog(timer=self.timer)
+        f = CallLog()
 
         e1 = CommandCalled(timestamp=self.clock, args=(42,))
         assert f(e1) == e1  # identity from caller point of view

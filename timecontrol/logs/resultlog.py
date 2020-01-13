@@ -34,8 +34,8 @@ class ResultLog(Log):  # TODO :see python trace.Trace
     It applies to only one pydef / command
     """
 
-    def __init__(self, timer=datetime.datetime.now):
-        super(ResultLog, self).__init__(timer=timer)
+    def __init__(self):
+        super(ResultLog, self).__init__()
 
     @dpcontracts.types()
     def __call__(

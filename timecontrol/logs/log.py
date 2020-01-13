@@ -5,6 +5,8 @@ from collections.abc import Mapping
 
 import typing
 
+import dpcontracts
+
 
 @dataclass(frozen=True)
 class Event:
@@ -21,8 +23,7 @@ class Log(Mapping):
        It is callable, to store a value with the current (wall)clock.
        """
 
-    def __init__(self, timer=datetime.now):
-        self.timer = timer
+    def __init__(self):
         self.map = OrderedDict()
 
     @property
@@ -32,20 +33,18 @@ class Log(Mapping):
         # we take the last in the list (we might have multiple results in same timestep)
         # TODO : maybe we should implement some kind of tunable probabilistic distribution here...
 
+    @dpcontracts.types()
     def __call__(
             self, event: Event
     ):
-        now = self.timer()
         # if already called for this time, store a set (undeterminism)
-        self.map[now] = self.map.get(now, set()) | {event}
+        # TODO : not duplicate timestamp here...
+        self.map[event.timestamp] = self.map.get(event.timestamp, set()) | {event}
         return event  # identity from the caller point of view. pure side-effecty.
 
     # TODO : maybe just delegate to OrderedDict ? BETTER : mappingproxy ! -> immutable
-    def __getitem__(self, item):
-        if item > self.timer():
-            return KeyError
-        else:
-            return self.map.get(item, set())
+    def __getitem__(self, timestamp):
+        return self.map.get(timestamp, set())
 
     def __iter__(self):
         return self.map.__iter__()

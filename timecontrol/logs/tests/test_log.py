@@ -48,7 +48,7 @@ class TestLog(unittest.TestCase):
 
     def test_logger_mapping(self):
         # passing timer to log to simulate it
-        f = Log(timer=self.timer)
+        f = Log()
 
         e1 = Event(timestamp=self.clock)
         assert f(e1) == e1  # identity from caller point of view
@@ -82,7 +82,7 @@ class TestLog(unittest.TestCase):
         # Verifing indeterminism with advanced event type
 
         # passing timer to log to simulate it
-        f = Log(timer=self.timer)
+        f = Log()
 
         e1 = MyEvt(timestamp=self.clock, value=42)
         assert f(e1) == e1  # identity from caller point of view

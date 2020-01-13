@@ -12,6 +12,9 @@ black = "*"
 
 [packages]
 aiounittest = "*"
+hypothesis = "*"
+result = "*"
+dpcontracts = "*"
 
 [requires]
 python_version = "3.7"

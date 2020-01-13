@@ -46,7 +46,7 @@ class TestResultLog(unittest.TestCase):
 
     def test_logger_mapping(self):
         # passing timer to log to simulate it
-        f = ResultLog(timer=self.timer)
+        f = ResultLog()
 
         e1 = CommandReturned(timestamp=self.clock, result=Result.Ok(42))
         assert f(e1) == e1  # identity from caller point of view
