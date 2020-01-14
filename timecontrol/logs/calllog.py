@@ -11,7 +11,7 @@ import typing
 
 import dpcontracts
 
-from .log import Log, Event
+from timecontrol.logs.log import Log, Event
 
 # TODO : different kinds of !structured! log / dataframes, etc.
 
@@ -42,5 +42,27 @@ class CallLog(Log):  # TODO :see python trace.Trace
         return super(CallLog, self).__call__(event)
 
 
+def call_logged(log: CallLog = CallLog()):
+    def decorator(cmd):
+        # TODO : nice and clean wrapper
+        def wrapper(*args, **kwargs):
+            log(CommandCalled(args=args, kwargs=kwargs))
+            return cmd(*args, **kwargs)
+        return wrapper
+    return decorator
+
+
 if __name__ == '__main__':
-    raise NotImplementedError("TODO : basic example")
+    import random
+
+    log = CallLog()
+
+    @call_logged(log=log)
+    def rand(p):
+        return random.randint(0, p)
+
+    r42 = rand(42)
+    r53 = rand(53)
+
+    for c, r in log.items():
+        print(f" - {c} => {r}")

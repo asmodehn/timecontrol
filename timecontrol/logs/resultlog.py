@@ -11,7 +11,7 @@ import typing
 
 import dpcontracts
 
-from .log import Log, Event
+from timecontrol.logs.log import Log, Event
 from result import Result
 
 
@@ -44,6 +44,34 @@ class ResultLog(Log):  # TODO :see python trace.Trace
         return super(ResultLog, self).__call__(event)
 
 
+def result_logged(log: ResultLog = ResultLog()):
+    def decorator(cmd):
+        # TODO :nice and clean wrapper
+        def wrapper(*args, **kwargs):
+            try:
+                res = cmd(*args, **kwargs)
+                result = Result.Ok(res)
+            except Exception as exc:
+                result = Result.Err(exc)
+            finally:
+                log(CommandReturned(result=result))
+                return result
+        return wrapper
+    return decorator
+
+
 if __name__ == '__main__':
-    raise NotImplementedError("TODO : basic example")
+    import random
+
+    log = ResultLog()
+    @result_logged(log=log)
+    def rand(p):
+        return random.randint(0, p)
+
+    r42 = rand(42)
+    r53 = rand(53)
+
+    for c, r in log.items():
+        print(f" - {c} => {r}")
+
 
