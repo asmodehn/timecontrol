@@ -18,10 +18,11 @@ CmdSyncLogData = namedtuple("CmdSyncLog", ["call", "result"])
 
 @dataclass(frozen=True)
 class CommandRun(CommandReturned):
-    # Note This is hte complementary semantic from log
-    # storing calls internaly before registering a run on result...
+    # Note : Here the event semantic is hte result : the important time is when result was received.
     call: typing.Optional[CommandCalled] = field(default_factory=lambda: None)
     # call is optional because we might not have observed it/logged the even for it...
+    # In controlled environment, we focus our expectations on the result, making the call optional
+    # Note
 
     @property
     def args(self):
@@ -43,57 +44,89 @@ class CommandLog(Log):  # TODO :see python trace.Trace
     It applies to only one pydef / command
     """
 
-    def __init__(self):
-        self.calls = CallLog()  # call stack (without matching result)...
-        self.results = ResultLog()  # result stack (without matching call)...
-        super(CommandLog, self).__init__()
-
     @dpcontracts.types()
     def __call__(
-            self, event: typing.Union[CommandCalled, CommandReturned]  # just to specialise the type here
+            self, event: CommandRun  # just to specialise the type here
     ):
-        if isinstance(event, CommandCalled):
-            self.calls(event)
-        elif isinstance(event, CommandReturned):
-            self.results(event)
-            # Here we associate return with latest call
-            latest = self.calls
-            # => assumes linearization of calls for ONE command !!!
-            # TODO: check semantics of async def (reentrant ?? linearized ??)
-            # TODO : Isn't this a 'Process' then ??
-            return super(CommandLog, self).__call__(CommandRun(call=self.calls.last, result=event.result))
-        else:
-            raise NotImplementedError("Unknown Event passed to command log")
+        return super(CommandLog, self).__call__(event)
 
 
-
-def command_logged(log: CommandLog):
-    # chaining decorators ( as higher order functions )
+def command_logged(log: CommandLog = CommandLog()):
     def decorator(cmd):
-        return call_logged(log=log)(result_logged(log=log)(cmd))
+        # TODO :nice and clean wrapper
+
+        def wrapper(*args, **kwargs):
+            # tying together call_logged and result_logged here following python call semantics (1 call :1 result)
+            call = CommandCalled(args=args, kwargs=kwargs)
+            try:
+                res = cmd(*args, **kwargs)
+                result = Result.Ok(res)
+            except Exception as exc:
+                result = Result.Err(exc)
+            finally:
+                log(CommandRun(call=call, result=result))
+                return result
+
+        async def async_wrapper(*args,
+                                **kwargs):
+            # tying together call_logged and result_logged here following python call semantics (1 call :1 result)
+            call = CommandCalled(args=args, kwargs=kwargs)
+            try:
+                res = await cmd(*args, **kwargs)
+                result = Result.Ok(res)
+            except Exception as exc:
+                result = Result.Err(exc)
+            finally:
+                log(CommandRun(call=call, result=result))
+                return result
+
+        if inspect.iscoroutinefunction(cmd):
+            return async_wrapper
+        else:
+            return wrapper
+
     return decorator
-# => Doesnt bring much... Maybe we should do things hte other way (accepting different type of logs in  call_logged and result_logged)
+
 
 if __name__ == '__main__':
 
     import random
 
     log = CommandLog()
+    # SYNC
+    # @command_logged(log=log)
+    # def rand(p):
+    #     return random.randint(0, p)
+    #
+    # r42 = rand(42)
+    # r53 = rand(53)
 
+    # for c, r in log.calls.items():
+    #     print(f" - {c} => {r}")
+    #
+    # for c, r in log.results.items():
+    #     print(f" - {c} => {r}")
+    #
+    # for c, r in log.items():
+    #     print(f" - {c} => {r}")
+
+    # ASYNC
+    import asyncio
     @command_logged(log=log)
-    def rand(p):
+    async def rand(p):
         return random.randint(0, p)
 
-    r42 = rand(42)
-    r53 = rand(53)
+    async def scheduler(loop=None):
+        import time
+        from datetime import timezone
+        print(datetime.now(tz=timezone.utc))
 
-    for c, r in log.calls.items():
-        print(f" - {c} => {r}")
+        loop = asyncio.get_event_loop() if loop is None else loop
 
+        loop.create_task(rand(42))
+        loop.create_task(rand(51))
 
-    for c, r in log.results.items():
-        print(f" - {c} => {r}")
-
+    asyncio.get_event_loop().run_until_complete(scheduler())
 
     for c, r in log.items():
         print(f" - {c} => {r}")

@@ -3,34 +3,34 @@
 # Note : This is meant to be used along with timecontrol.Function to alter a bit python semantics.
 # An actual call() means an effect will happen, and the state should be assume different (but the change event was traced)
 import asyncio
-import datetime
+from datetime import datetime, timedelta
 import random
 import time
 import inspect
 from collections.abc import Mapping
 
-from timecontrol.overlimiter import OverTimeLimit
+from timecontrol.logs.commandlog import CommandLog
 from timecontrol.underlimiter import UnderTimeLimit
-from timecontrol.eventlog import EventLog
 
 # WITH decorator to encourage consistent coding style :
 #   function as lambdas in Function objects (coroutines and procedures still supported)
 #   commands as decorated python procedures (coroutines and lambda still supported)
-
+# TODO : rethink... maybe not ? @funclass @cmdclass @agentclass, etc.
 
 class CommandRunner(Mapping):
     """
     A command, with always the same arguments.
-    What changes is the time that flows under our feet...
-    So it is a (pure) function of time, provided good enough time resolution.
 
-    Note : this is here for illustration and tests purposes.
-    Since it starts an infinite loop it is not really usable. You probably want CommandASyncRunner.
+    This is an async interface as it is "more generic" than usual sync one.
+    It also allows "executing in the background" from the user point of view, if so desired...
+
+    Note : in here we always have a 1:1 match request-response, and an ASAP time semantics (with underlimit as exception)
+
     """
 
-    def __init__(self, impl, args, kwargs, timer=datetime.datetime.now, sleeper=None):
-        sleeper = time.sleep if sleeper is None else sleeper
-        self.log = EventLog(timer=timer)
+    def __init__(self, impl, args, kwargs, timer=datetime.now, sleeper=None):
+        sleeper = asyncio.sleep if sleeper is None else sleeper
+        self.log = CommandLog()
         self._impl = impl
 
         # This is here only to allow dependency injection for testing
@@ -40,22 +40,56 @@ class CommandRunner(Mapping):
         self._args = args
         self._kwargs = kwargs
 
-    def __call__(self, cps):
-        delay = 0  # initial is "asap" usual semantics
-        while True:
-            try:
-                self._sleeper(delay)
-                #  We cannot assume idempotent like for a function. call in all cases.
-                res = self.log(self._impl(*self._args, **self._kwargs))
-                cps(res)
-            except UnderTimeLimit as utl:
-                # call is forbidden now. we have no choice but delay the call.
-                # We will never know what would have been the result now.
-                delay = utl.expected - utl.elapsed  # calling with the "leftover" delay since underlimiter prevented call this time
+        # In the AsyncRunner case, we need to open the loop (to allow sync or async usages)
+        self._timer = timer
+        self._sleeping = timedelta()  # is set to True when we are sleeping
+        self._sleepstart = self._timer()  # sleeping by default (as in "not running")
 
-            except OverTimeLimit as otl:
-                # call came too late this time ! make it happen faster next time...
-                delay=otl.expected - (otl.elapsed - otl.expected)  # call with reduced delay
+    @property
+    def sleeping(self):
+        # when we are sleeping :
+        d = timedelta(seconds=(self._sleepstart + self._sleeping) - self._timer())
+
+        if d < timedelta():
+            return d
+        else:  # not sleeping
+            return 0
+
+    async def __call__(
+        self,
+            # TODO : maybe also integrate space representation ehre (agent id, etc.)
+    ):
+        try:
+            self._sleeping = 0
+            #  We cannot assume idempotent like for a function. call in all cases.
+            if asyncio.iscoroutinefunction(self._impl):
+                res = self.log(await self._impl(*self._args, **self._kwargs))
+            else:  # also handling the synchronous case, synchronously.
+                res = self.log(self._impl(*self._args, **self._kwargs))
+            self._last_call = self._timer()  # it has been called !
+
+        except UnderTimeLimit as utl:
+            # call is forbidden now. we have no choice but wait.
+            # We will never know what would have been the result now.
+            self._sleeping = timedelta(utl.expected - utl.elapsed)
+
+            if inspect.iscoroutinefunction(
+                self._sleeper
+            ):  # because we cannot be sure of our sleeper...
+                await self._sleeper(self._sleeping)
+            else:
+                self._sleeper(self._sleeping)
+
+            res = await self()
+            # Note : we recurse directly here to guarantee ONE call ASAP (usual semantics)
+
+        except Exception as exc:
+            raise  # reraise anything else !
+            # should handle the case when 'res' is not defined
+        finally:
+            # res should be always defined... unless we got killed during sleep ??
+            # TODO : verify this !!! or change programming construct to provide guarantee ??
+            return res  # Here we can exit of the "async-background" loop as usual
 
     def __getitem__(self, item):
         return self.log.__getitem__(item)
@@ -66,64 +100,9 @@ class CommandRunner(Mapping):
     def __len__(self):
         return self.log.__len__()
 
-    # TODO : add log memory limit ??
-
-
-class CommandASyncRunner(CommandRunner):
-    """
-    A command, with always the same arguments.
-
-    This is an async interface for the command runner.
-    It allows "looping in the background" from the user point of view...
-
-    """
-
-    def __init__(self, impl, args, kwargs, timer=datetime.datetime.now, sleeper=None):
-        sleeper = asyncio.sleep if sleeper is None else sleeper
-        super(CommandASyncRunner, self).__init__(
-            impl=impl, args=args, kwargs=kwargs, timer=timer, sleeper=sleeper
-        )
-
-    async def __call__(
-        self, cps, delay=0  # cps as continuation passing...
-    ):  # we override the synchronous call with an asynchronous one
-        try:
-            if inspect.iscoroutinefunction(
-                self._sleeper
-            ):  # because we cannot be sure of our sleeper...
-                await self._sleeper(delay)
-            else:
-                self._sleeper(delay)
-
-            #  We cannot assume idempotent like for a function. call in all cases.
-
-            if asyncio.iscoroutinefunction(self._impl):
-                res = self.log(await self._impl(*self._args, **self._kwargs))
-            else:  # also handling the synchronous case, synchronously.
-                res = self.log(self._impl(*self._args, **self._kwargs))
-            cps(res)
-        except UnderTimeLimit as utl:
-            # call is forbidden now. we have no choice but wait.
-            # We will never know what would have been the result now.
-            self(cps = cps, delay = utl.expected - utl.elapsed)
-            # Note : we recurse here to guarantee ONE call ASAP (usual semantics)
-        except OverTimeLimit as otl:
-            # call came too late this time ! make it happen faster next time...
-            asyncio.create_task(self(cps = cps, delay = otl.expected - (otl.elapsed - otl.expected)))  # call with reduced delay
-            # Note : we schedule a new task here to not block the flow (call has been done already)
-        else:   # ONLY IF NO exception triggered (happens only once in case of recursion)
-            if delay > 0:  # delay == 0 means no recurse (would be sync semantics...). user is expected to trigger call by himself.
-                # schedule next pass
-                asyncio.create_task(self(cps = cps, delay = delay))
-
-        # Notable Behavior of this design:
-        # - at least ONE actual call is guaranteed to happen (immediately, or recursively) and be logged.
-        # - loop for *next periodic call* will be scheduled as a task, one time only,
-        #   so one await call will terminate as expected (but "loop in background"...).
-
 
 class Command:
-    def __init__(self, timer=datetime.datetime.now, sleeper=None):
+    def __init__(self, timer=datetime.now, sleeper=None):
         self.timer = timer
         self.sleeper = sleeper
 
@@ -142,7 +121,7 @@ class Command:
 
                 def __call__(self, *args, **kwargs):
                     # This is our lazyrun
-                    return CommandASyncRunner(
+                    return CommandRunner(
                         self._impl,
                         args,
                         kwargs,
@@ -158,7 +137,7 @@ class Command:
                 # Note: we do need a function here to grab instance as the first argument.
                 # It seems that if we use a class directly, the instance is lost when called,
                 # replaced by the class instance being created.
-                return CommandASyncRunner(
+                return CommandRunner(
                     impl, args, kwargs, timer=nest.timer, sleeper=nest.sleeper
                 )
 
@@ -189,8 +168,8 @@ if __name__ == "__main__":
     r6 = arand(6)
     r42 = arand(42)
 
-    asyncio.get_event_loop().create_task(r6(cps=print))
+    asyncio.get_event_loop().create_task(r6())
 
-    asyncio.get_event_loop().create_task(r42(cps=print))
+    asyncio.get_event_loop().create_task(r42())
 
     asyncio.get_event_loop().run_forever()
