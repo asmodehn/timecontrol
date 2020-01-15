@@ -11,7 +11,7 @@ We take a step back from traditional imperative programming :
 - then do that
 - and then that
 
-And from traidtional functional programming as well:
+And from traditional functional programming as well:
 - compute and give me this
 - then compute and give me that
 - etc.
@@ -42,9 +42,20 @@ Note these commands could be pure functions (if we found their result matched ou
 
 Both controlled and uncontrolled world are observed by "Results"
 
-The uncontrolled world can attempt to control the subject via a "Controller" requesting progress in time, usually via the action on intent to verify expectations...
+The uncontrolled world can attempt to control the subject via a "Controller" requesting some sort of progress over time, usually via the action on intent to verify expectations...
 
 
+
+
+Validation
+----------
+
+To validate our design, we need a long-running agent, operating on a simple system, and show that it is able to learn complex operations without previous knowledge.
+
+External system : basic integer arithmetic (+ and *)
+Internal system : Peano arithmetic (ZERO and SUCC)
+Goal : find peano algorithms for + and *
+Alternative : Dual numbers (find some way to compare actual derivative with behavior of the learning...)
 
 
 
