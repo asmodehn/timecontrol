@@ -17,43 +17,45 @@ This is useful to represent an ongoing set of computation (looking inward at the
 from __future__ import annotations
 
 import asyncio
+import concurrent
 import inspect
 import random
 import typing
 from collections.abc import Sequence
+from concurrent.futures import Executor
 from copy import copy, deepcopy
 from dataclasses import dataclass
+from datetime import datetime, timezone, timedelta
 
 import dpcontracts
 from pyrsistent import pset, PSet
-
 
 class DSet():  # TODO : type constructor ? Via decorator/metaclass ??
     """
     It looks like a set, it behaves like a set, but it is not exactly a set
     => it cannot be empty, only itself.
 
+    Also in *time* this is a non-empty list, matching with the realworld time-dimension thourgh python runtime.
+    => we can successively access elements of the set.
+
     This is a directed container, with the only direction being time.
-    It interface via python init, call and iterator methods.
+    Interestingly the python runtime semantics seem to indicate that, to be a directed non-empty list in time,
+     an empty DSet is always available to be extracted from itself at any time.
+
+    DSet interfaces via python init, call and iterator methods.
 
     It aims to guarantee proper directed container behavior over time dimension (by contrast to the state/space dimension)
     """
-    elems: PSet
-    sem: asyncio.BoundedSemaphore
+    elems: PSet  # elements for the set. Python semantics may differ and this can contain python runnable definitions.
+    # REMINDER : a set has only identity morphisms (skeletal - implicit here), and equal elements are the same (skeletal)
+    # Also elements can only be python things, or DSet in our level.
+    # Set : Skeletal Small Discrete Category TODO : https://ncatlab.org/nlab/show/set
 
-    # wrapping task to be able to control execution
-    @classmethod
-    async def __taskwrap(cls, t, s: asyncio.Semaphore):
-        await s.acquire()  # blocking on start, waiting for scheduler's release -> discipline !
-        async with s:
-            return await t
+    executor: Executor
 
-    #@dpcontracts.require("l must be iterable (state bimonad) and callable (time bimonad)", lambda args:  callable(args.l) and hasattr(args.l, '__next__'))
     def __init__(self, *args):  # container (monadic - space) interface
+        """ this is the state-monadic return """
         # scheduling tasks for computation in background (for time bimonad, later we must be able to get results...)
-
-        # Using Semaphore for runtime synchronization
-        self.sem = asyncio.BoundedSemaphore(len(args))
 
         # assuming enough compute resources # TODO: link that to number of CPUs to allow reschedule...
         # store (logically parallel) tasks (indeterministic compute order at this level)
@@ -61,99 +63,179 @@ class DSet():  # TODO : type constructor ? Via decorator/metaclass ??
 
         # if we have a value, nothing needs to be done
         object.__setattr__(self, 'elems',
-                           # we grab the content if it is a dset already (flatten -> implicit state-monadic join)
-                           # or we schedule task -once !- if we got a coroutine (run request -> implicit time-comonadic duplicate)
+                           # we grab the content if it is a dset already (flatten -> implicit time-monadic join)
                            # or (just a value) we add it to the elements
                             pset(iterable=(a.elems if isinstance(a, DSet) else
-                                           asyncio.create_task(DSet.__taskwrap(a, self.sem)) if inspect.iscoroutine(a) else
+                                           # time synchronization is left to __call__()
+                                           # asyncio.create_task(a) if inspect.iscoroutine(a) else
                                            a for a in args),
                             pre_size=len(args)
         ))
 
-        super(DSet, self).__init__()
+        # setting up the executor early (assigning real worldresource)
+        self.executor = concurrent.futures.ProcessPoolExecutor()
 
     def __repr__(self):
         """ Using custom representation - randomized distribution in set to limit side-effects"""
-        return f"DSet<{repr(set(random.sample(self.elems, len(self.elems))))}>"
+        return f"DSet<{repr(set(self.elems))}>"
 
     def __str__(self):
         """
         Using python naive representation  - randomized distribution in set to limit side-effects """
-        return str(set(random.sample(self.elems, len(self.elems))))
+        return str(set(self.elems))
 
     def __eq__(self, other):
-        # exact same data in memory (optim) or same content ( python's set semantics)
+        # exact same data in memory (optim) or same content (python's set semantics)
         return id(self.elems) == id(other.elems) or set(self.elems) == set(other.elems)  # Note : no need to shuffle/sample here.
 
+    def __enter__(self):  # TODO : maybe have this optional ??
+        """ This interface is an uncontrolled (potentialy remote) computation"""
+        # start computing asynchronously (without control)
+        return self.executor.__enter__()
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """ This is used to terminate the uncontrolled computation """
+        # ending computation (without control)
+        return self.executor.__exit__(exc_type, exc_val, exc_tb)
+
     # NOTE: these are not arguments, they are running option, independent from the task to run.
-    async def __call__(self, *args, **kwargs):  # run (state-monadic return) + result stream (time-comonadic extract)
-        # NOTE : This code actually starts on await (not on __call__ !! coros are internal in asyncio)
-        for i in range(1, len(self)):
-            self.sem.release()  # releasing all semaphores to start async computation.
+    async def __call__(self, td: datetime =None):  # designing a bit like a "real-time programming interface"
+        # TODO : maybe we should be able to pass objects of the *Shapes* category here to allow introspection ? datetime is just a specific shape...
+        # TODO : this is a "probe"
+        # => Identify shapes with python types ??
+        """
+        This is the time-monadic return of DSet, embedding computation in the container.
+        NOTE : With asyncio, this code actually starts on task scheduling, or on 'await', not on __call__ !!
+        coros are internal in asyncio, which has an apparently lazy scheduler.
+        BUT THIS IS THE ONLY PLACE in implicit interface where we can await for tasks...
+
+        Note it also takes care of the implicit time-monadic join (on call - computation start)
+        and time-comonadic duplicate (on await - computation end) via python operational async semantis,
+        But we add an additional limit on computation time, inspired from real-time programming interfaces.
+        """
+        # default targetdate
+        td = datetime.now(timezone.utc) + timedelta(seconds=3) if td is None else td  # defaults to 3 secs timestep
+
+        # initialize computation with raw data (assumed taking no time)
+        data = DSet(*{a for a in self.elems if not inspect.iscoroutine(a)})
+
+        # treat coroutines/computation separately
+        compute = [a for a in self.elems if inspect.iscoroutine(a)]
+        if compute:
+            measured=(0, 0)  # to get maximum initial runtime (average, counter)
+
+            # Start all computations - careful this can explode ! - we have to limit in time to impose control
+            while datetime.now(tz=timezone.utc) < td - timedelta(seconds=measured[0]):  # we have to stop before the target date !
+                before = time.time()
+                # One at a time, anyway we have to wait and the control loop cannot return before timestep has ended
+                e = next(compute)
+                # "living" objects in the set are really alive !
+                compute.append(await e)  # launching computation here (interleaving in current control flow)
+                # TODO: WARNING : functionality compression is key for applicability of this !!!
+
+                # averaging time of process over iterations...
+                measured = ((measured[0] * measured[1] + time.time() - before) / (measured[1] + 1), (measured[1] + 1))
+
+        # merge both here using special trick of DSet.__init__
+        # This will conserve computation, but also
+        return DSet(data, *compute)  # TODO : This is an "observe" to extract attributes of the category
+
+        # TODO: maybe we just cannot catch in-flight object ? just some statistics ?
+        #     # TODO : improve that maybe by doing pyrsistent transform instead of computing the whole set...
+        #     # TODO: categorical semantics of exhaustion ??? affine elements + linear types ?
+
+        # TODO maybe some kind of minimal learning here ??
 
         # executing here (after await, not after call ! ) will await on
         # ANY on going computation (guaranteeing overall progress - keeping semantics of "smallest timebox")
-        return DSet(*random.sample({await e if isinstance(e, asyncio.Task) else e for e in self.elems}, len(self.elems)))
-        # TODO : improve that maybe by doing pyrsistent transform instead of computing the whole set...
+        # TODO : call could be used to verify properties on DSet (Small category ?? -> kitty ?)
 
-    def __iter__(self):  # stream (state-comonadic extract) interface
-        # TODO : async to wait for completion ?
-        return iter(random.sample(self.elems, len(self.elems)))  # always an element, taken at random, until exhaustion
-        # TODO: categorical semantics of exhaustion ??? affine elements + linear types ?
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        """ this is the state-comonadic extract of DSet, stream-like. this allows to retrieve/generate the elems
+        Note There is no matching with original task inside one timestep - as per set semantics
+        The set-monadic return is __init__, storing the computation.
+
+        Note : If you want access to elements distinctively, use a DRecord instead
+        but you will have to name them, ie. find a *str* representation for them...
+        """
+        return DSet(*random.sample(self.elems, 1))  # always an element, taken at random, NO exhaustion ( => linear TT semantics)
+        # NOTE : we may return coroutines !
+
+    # NOTE :we do not wan to provide this interface, it would break user's expectations with __len__()
+    # def __getitem__(self, item: datetime):
+    #     pass
 
     def __len__(self):
-        return len(self.elems) + 1
+        return len(self.elems)  # we have a len of the number of elements, since we can only retrieve these,
+        # NOTE : but we *can* always access one, even if len == 0.
 
-# TODO : maybe DSet is just an interface (a trait over an Iterable/Callable/Hashable type ??)
-# TODO: If we make DSet a type constructor, maybe we can get rid of the semaphore and consider init as the return (instead of call)
-# => Time simplicity at the expense of state simplicity
+# TODO : maybe DSet is just an interface (a trait over an Iterable/Callable/Hashable (=> DContainer ?) of a type ??)
+
+
+# The empty DSet, already available and optimally unique in our runtime for id() to match.
+EmptyDSet = DSet()
+
+
+def dset(*args):
+    # just because we cannot simpy return an instance from __init__
+    # TODO : type constructor (metaclass and return on new ??)
+    if not args:
+        return EmptyDSet
+    else:
+        return DSet(*args)
 
 
 if __name__ == '__main__':
-    import time
+
+    assert dset() == EmptyDSet
+
+    # A Dice - return monad interface in state & time dimensions - => equi-probabilistic distribution...
+    dice = DSet(1, 2, 3, 4, 5, 6)
+
+    assert len(dice) == 6
+    # cardinality of the set, but it cannot be empty (there is always something to extract), only itself...
+
+    print(f"Rolling the dice")
+    # Observing the dice actually *rolls it* - extract in comonad interface in space & time dimensions -
+    # => this feels a bit quantum, statistical approach might be best...
+    for s in range(0, 10):
+        e = next(iter(dice))
+        print(e)
 
     async def schedule():
-        ds = DSet('a', 'b', 'c')
 
-        assert len(ds) == 4
+        # COMPUTE example
 
-        for e in ds:
+        def add(a, b):  # interpretation of the representation
+            return a + b  # implementation of the interpretation
+
+        # Peano inspired
+        # Note: all implementation should be in here, not in lower level. no meta lang currently...
+        diceS = DSet(1, add(1, 1), add(1, add(1, 1)), add(1, add(1, add(1, 1))),
+                     add(1, add(1, add(1, add(1, 1)))), add(1, add(1, add(1, add(1, add(1, 1))))))
+
+        # ONE OR THE OTHER !
+        # Contain computation in (atomic - at this scale) time, so we control timeflow here
+        # await diceS()
+
+        # ONE OR THE OTHER !
+        # Contain computation in (atomic - at this scale) space, so we control stateflow here
+        with diceS:
+            print("print me is running somewhere else!")
+
+            await asyncio.sleep(1)
+
+            print("Lets check the result already !")
+
+        print(f"Rolling the dice")
+        for s in range(0, 10):
+            e = next(iter(diceS))
             print(e)
 
-        async def printme(arg):
-            print("sleeping a bit...")
-            #await asyncio.sleep(1)  # just to test
-            print(arg)
-            print("Job done !")
-            return arg
-
-        df = DSet(printme(arg=42))
-
-        print("print me is scheduled !")
-
-        await asyncio.sleep(1)
-
-        print("lets start the machine !")
-
-        dres = df()
-
-        print("I'm fading out...")
-
-        await asyncio.sleep(2)
-
-        print("what the hmrmrmhmrflfl....")
-
-        await asyncio.sleep(3)
-
-        print("OOPS I feel asleep, nothing happened yet ? ")
-
-        await asyncio.sleep(1)
-
-        print("Lets get the result already !")
-
-        print(await dres)
-
-        # This is needed only if we dont await (block) before
+        # This might be needed only if we dont await/block before
         await asyncio.sleep(1)
 
         print("Ok onto something else now !")
