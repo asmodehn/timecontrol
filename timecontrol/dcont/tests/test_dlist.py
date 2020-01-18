@@ -1,4 +1,3 @@
-# TODO : full on property testing based on container (category) theory...
 import asyncio
 import unittest
 
@@ -9,7 +8,8 @@ from hypothesis import strategies as st
 from timecontrol.dcont.dlist import DList, EmptyDList, dlist
 
 
-class TestDListTime(aiounittest.AsyncTestCase):
+
+class TestDListTime(unittest.TestCase):
     """ Testing DList is a time - BImonad in python """
 
     @given(arg=st.integers(), result=st.integers())
@@ -32,35 +32,28 @@ class TestDListTime(aiounittest.AsyncTestCase):
 
         assert dld != dl
 
-    @given(arg=st.integers(), result=st.integers())
-    def test_comonad_int(self, arg, result):
+    @given(st.data())
+    def test_comonad_int(self, data):
         """ Testing comonadic interface on DList[int] """
 
-        t = 42
+        t = data.draw(st.integers())
         dl = dlist(t, t)  # monadic return
 
         assert isinstance(dl, DList)
         assert t in dl  # we can check the contents  !  # TODO : on type instead ??
 
-        # next as comonadic extract
-        assert next(dl) == t
-        assert next(dl) == t
-        assert next(dl) == EmptyDList
-        # Note : there is a (affine ?) time semantic of cunsomption here...
+        # next as getting subtype , via the comonadic extract in TIME.
+        # It is not the one in STATE - getitem - and uses different types because of container time semantics.
+        assert next(dl) == dlist(t)
+        assert next(dl) == dlist(t)
+        # we can go on for ever but
+        assert next(next(dl)) == EmptyDList
+        # Note : there is a (affine ?) time semantic of cunsomption here in one line, but not in sequential call...
 
-        # iter as comonadic duplicate
-        assert dl == iter(dl)
-
-        # iterating again starts again (python semantics)
-        assert next(dl) == t
-        assert next(dl) == t
-        assert next(dl) == EmptyDList
-
-        # CAREFUL !
+        # CAREFUL with monadic join, it doesnt alter structure !
         dld = dlist(dlist(t), dlist(t))
-
         assert dld != dl
 
-        dle = next(dld)
-        assert dle != t
-        assert dle == dlist(t)
+        dln = next(dld)
+        assert dln != t
+        assert dln == dlist(t)

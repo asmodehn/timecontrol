@@ -11,7 +11,7 @@ from datetime import datetime, timezone, timedelta
 
 import dpcontracts
 from pyrsistent import pvector, PVector, CheckedPVector
-
+from typeclasses import typeclass
 
 """
 REMINDER : Although we think about time dimension properties, we shouldnt implement time related topics here.
@@ -31,7 +31,7 @@ Note, in python
 - space dimension : TODO (non local data...) maybe match a state dimension at a higher scale ? ie one localized agent takes care of one type. 
 """
 
-
+# TODO : typeclass ??
 class DList():
     """
     It looks like a list, it behaves like a list, but it is not exactly a list
@@ -42,30 +42,26 @@ class DList():
     Compared to DSet, it is ... TODO
     """
     vector: PVector
-    focus: int
 
     def __init__(self, *args):  # container / monadic interface
         """ Do not use this directly. Use the dlist function provided"""
         # logging stuff
         self.vector = pvector(args)
-        self.focus = 0
 
     def __repr__(self):
-        return f"{repr(self.vector)}<-{self.focus}"
+        return f"{repr(self.vector)}"
 
     def __str__(self):
-        return f"{str(list(self.vector))}<-{self.focus}"
+        return f"{str(list(self.vector))}"
 
     def __eq__(self, other: DList):
         """ Stict equality - no duck typing here !
         """
         if type(self) != type(other):
             return False
-        # focus need to be the same !
-        focusmatch = self.focus == other.focus
         # exact same data in memory (optim) or same content
         contentmatch = id(self.vector) == id(other.vector) or self.vector == other.vector
-        return focusmatch and contentmatch
+        return contentmatch
 
     # NOTE : Probably we do not need the call implementation here.
     #  We do not need any specific time semantics represented in state
@@ -75,27 +71,24 @@ class DList():
     # def __call__(self, *args, **kwargs):
     #     pass
 
-    def __getitem__(self, item: int):  # container (comonadic - state) interfaceur
-        if item == len(self.vector):  # head at the back in our convention
-            # Here we recurse, returning ourselves, but only if user asks for it -> lazy.
+    def __getitem__(self, item: int):  # container (comonadic - state) interface: extract
+        if item == len(self.vector):
             return EmptyDList
         return self.vector[item - 1]
 
     def __contains__(self, item):
-        """ Contains does not increment focus when checking whats inside !"""
+        """ Contains does not increment focus when checking whats inside ! Useful to check subtype..."""
         return item in self.vector
 
     def __iter__(self):  # stream / comonadic interface
-        """ Constructing an iterator reset the focus to the beginning of the list"""
-        self.focus = 0
         return self
 
     def __next__(self):
-        if self.focus >= len(self.vector):
-            return EmptyDList
+        if self.vector:
+            # Returning the subcontainer
+            return dlist(*self.vector[1::])
         else:
-            self.focus += 1  # move focus
-            return self.vector[self.focus - 1]
+            return EmptyDList
 
     def __len__(self):
         return len(self.vector) + 1
