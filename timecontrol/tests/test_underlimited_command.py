@@ -32,7 +32,7 @@ class TestUnderLimitedCommand(aiounittest.AsyncTestCase):
 
         self.command_call = False
 
-    def test_command_underlimit(self):
+    async def test_command_underlimit(self):
         lc = Command(timer=self.timer, sleeper=self.sleeper)(
             UnderLimiter(period=3, timer=self.timer)(self.cmdimpl)
         )
@@ -48,7 +48,7 @@ class TestUnderLimitedCommand(aiounittest.AsyncTestCase):
         assert len(lc_one) == 0
 
         # But triggers, and sleeps on command run...
-        assert lc_one() == 42
+        assert await lc_one() == 42
         assert self.slept == 3
         assert self.command_call == True
         assert len(lc_one) == 1
@@ -57,7 +57,7 @@ class TestUnderLimitedCommand(aiounittest.AsyncTestCase):
         self.command_call = False
 
         assert (
-            lc_two() == 42
+            await lc_two() == 42
         )  # another call is also sleeping (sharing the command structure and therefore underlimiter)
         assert self.slept == 3
         assert self.command_call == True
@@ -70,7 +70,7 @@ class TestUnderLimitedCommand(aiounittest.AsyncTestCase):
         self.clock += 4
         # next call will not sleep
 
-        assert lc_one() == 42
+        assert await lc_one() == 42
         assert self.slept == 0
         assert self.command_call == True
 

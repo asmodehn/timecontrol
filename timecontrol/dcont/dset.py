@@ -20,6 +20,7 @@ import asyncio
 import concurrent
 import inspect
 import random
+import time
 import typing
 from collections.abc import Sequence
 from concurrent.futures import Executor
@@ -30,10 +31,12 @@ from datetime import datetime, timezone, timedelta
 import dpcontracts
 from pyrsistent import pset, PSet
 
+
+
 class DSet():  # TODO : type constructor ? Via decorator/metaclass ??
     """
     It looks like a set, it behaves like a set, but it is not exactly a set
-    => it cannot be empty, only itself.
+    => it cannot be empty, only itself. => this seems to be pointed set ? pointer is taken at random (otherwise use a dmap)
 
     Also in *time* this is a non-empty list, matching with the realworld time-dimension thourgh python runtime.
     => we can successively access elements of the set.
@@ -120,17 +123,22 @@ class DSet():  # TODO : type constructor ? Via decorator/metaclass ??
         data = DSet(*{a for a in self.elems if not inspect.iscoroutine(a)})
 
         # treat coroutines/computation separately
-        compute = [a for a in self.elems if inspect.iscoroutine(a)]
+        compute = (a for a in self.elems if inspect.iscoroutine(a))
+        results = []
         if compute:
             measured=(0, 0)  # to get maximum initial runtime (average, counter)
 
             # Start all computations - careful this can explode ! - we have to limit in time to impose control
             while datetime.now(tz=timezone.utc) < td - timedelta(seconds=measured[0]):  # we have to stop before the target date !
                 before = time.time()
-                # One at a time, anyway we have to wait and the control loop cannot return before timestep has ended
-                e = next(compute)
-                # "living" objects in the set are really alive !
-                compute.append(await e)  # launching computation here (interleaving in current control flow)
+                try:
+                    # One at a time, anyway we have to wait and the control loop cannot return before timestep has ended
+                    e = next(compute)
+                    # "living" objects in the set are really alive !
+                    results.append(await e)  # launching computation here (interleaving in current control flow)
+                except StopIteration as si:
+                    # TODO: ignore and keep working compute.clear
+                    raise
                 # TODO: WARNING : functionality compression is key for applicability of this !!!
 
                 # averaging time of process over iterations...
@@ -138,7 +146,7 @@ class DSet():  # TODO : type constructor ? Via decorator/metaclass ??
 
         # merge both here using special trick of DSet.__init__
         # This will conserve computation, but also
-        return DSet(data, *compute)  # TODO : This is an "observe" to extract attributes of the category
+        return DSet(data.elems.union(set(results)), *compute)  # TODO : This is an "observe" to extract attributes of the category
 
         # TODO: maybe we just cannot catch in-flight object ? just some statistics ?
         #     # TODO : improve that maybe by doing pyrsistent transform instead of computing the whole set...
@@ -149,6 +157,10 @@ class DSet():  # TODO : type constructor ? Via decorator/metaclass ??
         # executing here (after await, not after call ! ) will await on
         # ANY on going computation (guaranteeing overall progress - keeping semantics of "smallest timebox")
         # TODO : call could be used to verify properties on DSet (Small category ?? -> kitty ?)
+
+    def __contains__(self, item):
+        """ Implementing contains, to not have to go through the iteration to check membership """
+        return item in self.elems
 
     def __iter__(self):
         return self
@@ -224,7 +236,7 @@ if __name__ == '__main__':
         # ONE OR THE OTHER !
         # Contain computation in (atomic - at this scale) space, so we control stateflow here
         with diceS:
-            print("print me is running somewhere else!")
+            print("add is running somewhere else!")
 
             await asyncio.sleep(1)
 

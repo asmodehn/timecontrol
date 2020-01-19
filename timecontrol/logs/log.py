@@ -11,7 +11,7 @@ import dpcontracts
 @dataclass(frozen=True)
 class Event:
     # todo : support more time representations...
-    timestamp: typing.Union[int,datetime] = field(default_factory=lambda: datetime.now(tz=timezone.utc))
+    timestamp: typing.Union[int, datetime] = field(default_factory=lambda: datetime.now(tz=timezone.utc))
 
     def __hash__(self):  # make sure the event is hashable (storable in a set)
         return hash(self.timestamp)
@@ -59,6 +59,16 @@ class Log(Mapping):
     def __add__(self, other):
         # TODO : add mergeable functionality
         raise NotImplementedError
+
+
+def logged(log: Log):
+    def decorator(cmd):
+        # TODO : nice and clean wrapper
+        def wrapper(*args, **kwargs):
+            log(Event())
+            return cmd(*args, **kwargs)
+        return wrapper
+    return decorator
 
 
 if __name__ == "__main__":

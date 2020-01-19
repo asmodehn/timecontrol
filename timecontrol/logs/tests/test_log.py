@@ -44,7 +44,6 @@ class TestLog(unittest.TestCase):
 
     def setUp(self) -> None:
         self.clock = 0
-        self.logged_call = False
 
     def test_logger_mapping(self):
         # passing timer to log to simulate it

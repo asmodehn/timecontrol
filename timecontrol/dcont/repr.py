@@ -27,6 +27,20 @@ def _(i: int):
     return f"{i}: int"
 
 
+# Other base types to allow some kind of structure :
+#  {int} : sets  # no order - pointer and data are ints
+#  [str] : list  # total order - pointer and data are str
+#  <py> : tree  # partial order - pointer are py hashable and data are py data
+
+
+
+
+
+
+
+
+
+
 def parserepr(r: str) -> typing.Any:
     """
     The parser inverse of the various repr.

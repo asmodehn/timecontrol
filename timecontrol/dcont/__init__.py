@@ -1,12 +1,12 @@
 """
-This package implements various directed containers in time dimension - not in state.
-Meaning their structure is used for time management only.
+This package implements various directed containers in time dimension - and in state for introspection purposes.
+Meaning their structure is used for time management, via a state interface (datatype) or via a python timestep interface (call and next).
 
 We will here work in the RunTime Category:
 - objects: atomic computation happening in time (space-state undefined at this level, but can be contained)
 - morphism: time-translation between steps in computation
 
-- product: parallel computation (run this and that, in this timestep)
+- product: parallel computation (run both this and that, in this timestep)
 - coproduct: probabilistic computation (run this OR that, not both)
 - exponential: trigger the computation step
 

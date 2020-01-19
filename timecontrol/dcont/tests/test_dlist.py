@@ -8,15 +8,20 @@ from hypothesis import strategies as st
 from timecontrol.dcont.dlist import DList, EmptyDList, dlist
 
 
-
 class TestDListTime(unittest.TestCase):
     """ Testing DList is a time - BImonad in python """
 
-    @given(arg=st.integers(), result=st.integers())
-    def test_monad_int(self,  arg, result):
+    @given(st.data())
+    def test_empty_falsy(self, data):
+        assert bool(dlist()) == False
+
+    # TODO : test usual / expected list behavior
+
+    @given(st.data())
+    def test_monad_int(self,  data):
         """ Testing monadic interface on DList[int] """
 
-        t = 42
+        t = data.draw(st.integers())
         dl = dlist(t, t)   # monadic return
 
         assert isinstance(dl, DList)

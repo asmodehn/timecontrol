@@ -1,5 +1,9 @@
 """
-A sequence of commands...
+A "group" of commands, whatever that means...
+
+Control is eager : run commands at least once implicitely
+control runs one (or more) commands once or more times.
+
 """
 
 # TODO
@@ -11,24 +15,23 @@ A sequence of commands...
 # Also with the looping behavior on one command...
 import asyncio
 import inspect
+from collections import Mapping
 from datetime import datetime, timedelta
 
 from timecontrol.logs.calllog import CallLog
 from timecontrol.overlimiter import OverTimeLimit, OverLimiter
+from timecontrol.schedules.schedule import Schedule, Intent
 
 
-class ControlRunner(Mapping):
+class ControlRunner():  # TODO : Mapping): # with times?
     # Note cmd can be a whole graph / category of commands ( program / code )...
 
-    def __init__(self, cmd, args, kwargs, loop=None, timer=datetime.now, sleeper=None):
+    def __init__(self, cmd, loop=None, timer=datetime.now, sleeper=None):
         self._cmd = cmd
         self._downtime = None  # None means infinite : the initial value
 
-        self.plan = ControlPlan()
-
-        # Note : instance is supposed to be in args, when decorating instance methods...
-        self._args = args
-        self._kwargs = kwargs
+        # TODO : ControlIntent
+        self.plan = Schedule(Intent())  # asyncio's executor semantics ??
 
         # -> no looping, one time asap execution as usual.
         self._timer = timer
@@ -40,43 +43,57 @@ class ControlRunner(Mapping):
         return self._cmd.__name__
 
     async def __call__(self):
-            # TODO : maybe also integrate space representation ehre (agent id, etc.)
+        # TODO : maybe also integrate space representation here (agent id, etc.)
         """
         Triggers the controlrunner !
         :param args:
         :param kwargs:
         :return:
         """
-        try:
-            if asyncio.iscoroutinefunction(self._cmd):
-                res = await self._cmd(*self._args, **self._kwargs)
-            else:
-                res = self._cmd(*self._args, **self._kwargs)
-        except OverTimeLimit as otl:
-            # self._cmd has been called TOO LATE !
-            # => speed up !!
-            print(otl)
-            res = otl.result
 
-            if self._downtime is None:
-                self._downtime = timedelta(seconds=otl.expected)  # seconds by default (time is in seconds)
-            else:
-                self._downtime = self._downtime / 2
+        # TODO : extract an event from the schedule
+        next_evt = self.plan()
 
-        if self._downtime is not None:
-            # ensuring enough downtime
-            if inspect.iscoroutinefunction(
-                self._sleeper
-            ):  # because we cannot be sure of our sleeper...
-                await self._sleeper(self._downtime.total_seconds())
-            else:
-                self._sleeper(self._downtime.total_seconds())
+        if next_evt:  # Falsy if there is nothing to do...
 
-            # One thing to do here : start a background loop
-            asyncio.create_task(self())
-            # TODO : variate the args/kwargs, based on a strategy, to generate a cache (complementary of the log...)
+            # NOte : we dont use tasks just yet -> remote compute LATER
+            try:
+                if asyncio.iscoroutinefunction(self._cmd):
+                    res = await self._cmd(*next_evt._args, **next_evt._kwargs)
+                else:
+                    res = self._cmd(*next_evt._args, **next_evt._kwargs)
+                # TODO : finish timing now !
 
-        return res
+                assert res == next_evt._result
+
+                # be able to plugin some learning
+                # TODO !!!
+
+            except OverTimeLimit as otl:
+                # self._cmd has been called TOO LATE !
+                # => speed up !!
+                print(otl)
+                res = otl.result
+
+                if self._downtime is None:
+                    self._downtime = timedelta(seconds=otl.expected)  # seconds by default (time is in seconds)
+                else:
+                    self._downtime = self._downtime / 2
+
+            if self._downtime is not None:
+                # ensuring enough downtime
+                if inspect.iscoroutinefunction(
+                    self._sleeper
+                ):  # because we cannot be sure of our sleeper...
+                    await self._sleeper(self._downtime.total_seconds())
+                else:
+                    self._sleeper(self._downtime.total_seconds())
+
+                # One thing to do here : start a background loop
+                asyncio.create_task(self())
+                # TODO : variate the args/kwargs, based on a strategy, to generate a cache (complementary of the log...)
+
+            return res
 
     # TODO : maybe manages combining commands somehow... (sequence / parallel / higher order)
 
@@ -93,7 +110,7 @@ class Control:
         nest = self
 
         # starts an event loop !
-        runner = ControlRunner(cmd=impl, args=(), kwargs={}, timer=self.timer, sleeper=self.sleeper)
+        runner = ControlRunner(cmd=impl, timer=self.timer, sleeper=self.sleeper)
         asyncio.run(runner())
 
         # def lazyrun(*args, **kwargs):
@@ -109,16 +126,6 @@ class Control:
 
 if __name__ == "__main__":
 
-    # # ASYNC
-    # @Control()
-    # async def tick():
-    #     print("Running unlimited tick")
-    #     print(datetime.now())
-    #
-    # t = tick()
-    #
-    # asyncio.get_event_loop().run_forever()
-
     # ASYNC
     @Control()
     @OverLimiter(period=3)
@@ -126,5 +133,4 @@ if __name__ == "__main__":
         print("Running limited tick - period: 3")
         print(datetime.now())
 
-    # Observe how the overlimiter timelimit influences the controller
-    #Not needed without lazyrun : tick()
+    asyncio.get_event_loop().run_forever()

@@ -17,7 +17,9 @@ class TestDDictTime(aiounittest.AsyncTestCase):
         """ Testing monadic interface on DList[int] """
 
         t = 42
-        dd = ddict(answer1=t, answer2=t)   # monadic return
+        r, dd = ddict(answer1=t, answer2=t)   # monadic return
+
+        assert r == ">"  # root of ddict
 
         assert isinstance(dd, DDict)
         assert t in dd   # we can check the contents  !  # TODO : on type instead ??
@@ -47,10 +49,10 @@ class TestDDictTime(aiounittest.AsyncTestCase):
 
         # next as getting subtype , via the comonadic extract in TIME.
         # It is not the one in STATE - getitem - and uses different types because of container time semantics.
-        assert next(dd) in [dt, ddict(sub2=t)]  # indeterminism !
+        assert next(dd) in [dt, ddict(path='>answer2', sub2=t)]  # indeterminism !
         assert next(dd) in [dt, ddict(sub2=t)]  # indeterminism !
         # we can go on for ever but
-        assert next(next(dd)) in [ddict(**{'answer1.sub1': EmptyDDict}), ddict(**{'answer2.sub2': EmptyDDict})]
+        assert next(next(dd)) in [ddict(**{'>answer1;sub1': EmptyDDict}), ddict(**{'>answer2;sub2': EmptyDDict})]
         # Note : there is a (affine ?) time semantic of cunsomption here in one line, but not in sequential call...
 
         # CAREFUL with monadic join, it doesnt alter structure !

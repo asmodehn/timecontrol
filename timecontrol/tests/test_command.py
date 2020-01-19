@@ -34,7 +34,7 @@ class TestCommand(aiounittest.AsyncTestCase):
         assert len(c_one) == 0
 
         # one call will store in log
-        await c_one(cps=lambda _: None)
+        await c_one()
         assert len(c_one) == 1
         assert c_one[self.clock] == {self.result}
 
@@ -43,7 +43,7 @@ class TestCommand(aiounittest.AsyncTestCase):
         self.result = 51
         # works here (compared to other test), because function implementation stores a reference to the value...
 
-        await c_one(cps=lambda _: None)
+        await c_one()
         assert len(c_one) == 1
         assert c_one[self.clock] == {self.result, old_result}
 
@@ -53,7 +53,7 @@ class TestCommand(aiounittest.AsyncTestCase):
         old_clock = self.clock
         self.clock = 3
 
-        await c_one(cps=lambda _: None)
+        await c_one()
         assert len(c_one) == 2
         assert c_one[old_clock] == {self.result, old_result}
         assert c_one[self.clock] == {self.result}
@@ -68,7 +68,7 @@ class TestCommand(aiounittest.AsyncTestCase):
         assert len(c_one) == 0
 
         # one call will store in log
-        await c_one(cps=lambda _: None)
+        await c_one()
         assert len(c_one) == 1
         assert c_one[self.clock] == {self.result}
 
@@ -77,7 +77,7 @@ class TestCommand(aiounittest.AsyncTestCase):
         self.result = 51
         # works here (compared to other test), because function implementation stores a reference to the value...
 
-        await c_one(cps=lambda _: None)
+        await c_one()
         assert len(c_one) == 1
         assert c_one[self.clock] == {self.result, old_result}
 
@@ -87,7 +87,7 @@ class TestCommand(aiounittest.AsyncTestCase):
         old_clock = self.clock
         self.clock = 3
 
-        await c_one(cps=lambda _: None)
+        await c_one()
         assert len(c_one) == 2
         assert c_one[old_clock] == {self.result, old_result}
         assert c_one[self.clock] == {self.result}
@@ -116,7 +116,7 @@ class TestCommand(aiounittest.AsyncTestCase):
         assert len(c_one) == 0
 
         # one call will store in log
-        await c_one(cps=lambda _: None)
+        await c_one()
         assert len(c_one) == 1
         assert c_one[self.clock] == {self.result}
 
@@ -125,7 +125,7 @@ class TestCommand(aiounittest.AsyncTestCase):
         sample.result = 51
         # here we need to change the result variable in the instance (an actual copy of self.result)
 
-        await c_one(cps=lambda _: None)
+        await c_one()
         assert len(c_one) == 1
         assert c_one[self.clock] == {sample.result, old_result}
 
@@ -135,7 +135,7 @@ class TestCommand(aiounittest.AsyncTestCase):
         old_clock = self.clock
         self.clock = 3
 
-        await c_one(cps=lambda _: None)
+        await c_one()
         assert len(c_one) == 2
         assert c_one[old_clock] == {self.result, old_result}
         assert c_one[self.clock] == {self.result}
@@ -164,7 +164,7 @@ class TestCommand(aiounittest.AsyncTestCase):
         assert len(c_one) == 0
 
         # one call will store in log
-        await c_one(cps=lambda _: None)
+        await c_one()
         assert len(c_one) == 1
         assert c_one[self.clock] == {self.result}
 
@@ -173,7 +173,7 @@ class TestCommand(aiounittest.AsyncTestCase):
         sample.result = 51
         # here we need to change the result variable in the instance (an actual copy of self.result)
 
-        await c_one(cps=lambda _: None)
+        await c_one()
         assert len(c_one) == 1
         assert c_one[self.clock] == {sample.result, old_result}
 
@@ -183,7 +183,7 @@ class TestCommand(aiounittest.AsyncTestCase):
         old_clock = self.clock
         self.clock = 3
 
-        await c_one(cps=lambda _: None)
+        await c_one()
         assert len(c_one) == 2
         assert c_one[old_clock] == {self.result, old_result}
         assert c_one[self.clock] == {self.result}
@@ -211,7 +211,7 @@ class TestCommand(aiounittest.AsyncTestCase):
         assert len(c_one) == 0
 
         # one call will store in log
-        await c_one(cps=lambda _: None)
+        await c_one()
         assert len(c_one) == 1
         assert c_one[self.clock] == {self.result}
 
@@ -220,7 +220,7 @@ class TestCommand(aiounittest.AsyncTestCase):
         c_one._impl.result = 51
         # here we need to change the result variable in the COMMAND instance (an actual copy of self.result)
 
-        await c_one(cps=lambda _: None)
+        await c_one()
         assert len(c_one) == 1
         assert c_one[self.clock] == {c_one._impl.result, old_result}
 
@@ -230,7 +230,7 @@ class TestCommand(aiounittest.AsyncTestCase):
         old_clock = self.clock
         self.clock = 3
 
-        await c_one(cps=lambda _: None)
+        await c_one()
         assert len(c_one) == 2
         assert c_one[old_clock] == {self.result, old_result}
         assert c_one[self.clock] == {self.result}

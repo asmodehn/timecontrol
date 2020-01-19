@@ -54,6 +54,10 @@ class DList():
     def __str__(self):
         return f"{str(list(self.vector))}"
 
+    def __bool__(self):
+        """ Falsy if empty, just like vector"""
+        return bool(self.vector)
+
     def __eq__(self, other: DList):
         """ Stict equality - no duck typing here !
         """
@@ -74,7 +78,7 @@ class DList():
     def __getitem__(self, item: int):  # container (comonadic - state) interface: extract
         if item == len(self.vector):
             return EmptyDList
-        return self.vector[item - 1]
+        return self.vector[item]
 
     def __contains__(self, item):
         """ Contains does not increment focus when checking whats inside ! Useful to check subtype..."""

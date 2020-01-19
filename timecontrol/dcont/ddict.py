@@ -12,7 +12,7 @@ from typing import Hashable
 from pyrsistent import pmap, PMap, typing
 
 
-class DDict:  # TODO : rename DTree. more explicit
+class DDict:  # TODO : rename DTree. more explicit. Or even Zipper ??? (cf Huet)
     """
     It looks like a dict, it behaves like a dict, but it is not exactly a dict
     => it is a tree and cannot be empty !
@@ -35,12 +35,9 @@ class DDict:  # TODO : rename DTree. more explicit
 
     """
     map: PMap
-    path: str  # Storing the tree path for subtrees
-
     def __init__(self, **kwargs):  # container / monadic interface
         """ Do not use this directly. Use the ddict function provided"""
         self.map = pmap(kwargs)
-        self.path = ""
 
     def __repr__(self):
         return f"{repr(self.map)}"
@@ -65,10 +62,10 @@ class DDict:  # TODO : rename DTree. more explicit
     # def __call__(self, *args, **kwargs):
     #     pass
 
-    def __getitem__(self, item: int):  # container (comonadic - state) interface
+    def __getitem__(self, item: str):  # container (comonadic - state) interface
         if item not in self.map.keys():
             return EmptyDDict
-        return self.map[item]
+        return self.map[item]  # TODO : a way to get into the Tree structure...
 
     def __contains__(self, item):
         """ Contains does not increment focus when checking whats inside ! Useful to check subtype..."""
@@ -80,10 +77,8 @@ class DDict:  # TODO : rename DTree. more explicit
     def __next__(self):
         if self.map.keys():
             choice = random.sample(self.map.keys(), 1)[0]  # TODO : allow parameterizing the random choice here...
-            if self.map[choice]:
-                resval = self.map[choice]
-            reskey = ".".join((self.path, choice))
-            return ddict(**{reskey: resval})
+            resval = self.map[choice]
+            return ddict(**{resval: EmptyDDict})  # Note : hte val becomes hte key....
         else:
             return EmptyDDict
 
@@ -99,15 +94,26 @@ class DDict:  # TODO : rename DTree. more explicit
 EmptyDDict = DDict()
 
 
-def ddict(**kwelements):
-    if not kwelements:
-        return EmptyDDict
-    elif len(kwelements) == 1 and isinstance(next(iter(kwelements.values())), DDict):
-        # To get a bimonad we need to encode an implicit join here so that we never need duplicate
-        # even if we are semantically compatible.
-        return DDict(**next(iter(kwelements.values())).map)
+# TODO : seems ddct needs some kind of correspondance between keys and values, to be able to access leaf nodes that are the empty tree...
+# => hashalbe values ??? python representation ?? generic string representation ???
+
+
+def emptyddict(value):
+    pass
+
+def ddict(**children):
+    if not children:
+        return "<", EmptyDDict
+    elif len(children) == 1:
+        key, val = next(children.items())
+        if isinstance(val, DDict):
+            # To get a bimonad we need to encode an implicit join here so that we never need duplicate
+            # even if we are semantically compatible.
+            return key, DDict(**val.map)  # consuming the key (and returning it)
+        else:
+            return ">", DDict(**children)
     else:
-        return DDict(**kwelements)
+        return ">", DDict(**children)
 
 
 # - storing scheduled computation (refering to 'tasks' by time constraints - 'box' - each node in the tree / maybe matches timescales concept... TODO : Time Interval Logic / TLA+ !)

@@ -31,7 +31,7 @@ from timecontrol.dcont.dset import DSet
 
 from asyncio import AbstractEventLoop
 
-
+# TODO : maybe use a DClass as a pointed set (with the instance being the set - type -  element)
 class DMap(DSet):  # This is a specialization in python semantics only, inheritance is likely appropriate here.
     """
     A DMap behaves like a non-empty list (in the directed container sense) in time,
@@ -152,7 +152,7 @@ if __name__ == '__main__':
         # ONE OR THE OTHER !
         # Contain computation in (atomic - at this scale) space, so we control stateflow here
         with diceR:
-            print("print me is running somewhere else!")
+            print("add is running somewhere else!")
 
             await asyncio.sleep(1)
 

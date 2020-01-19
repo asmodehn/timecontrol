@@ -1,3 +1,4 @@
+import random
 from collections import OrderedDict
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -8,6 +9,8 @@ import typing
 import dpcontracts
 import asyncio
 
+from timecontrol.schedules.schedule import Schedule, Intent
+
 """
 A Schedule of intents
 intents have a targetdate to start getting into effect
@@ -16,92 +19,43 @@ intents have a targetdate to start getting into effect
 
 
 @dataclass(frozen=True)
-class CallIntent:  # Note : this is an expected event, with timestamp into the future...
-    # todo : support more time representations...
-    targetdate: typing.Union[int, datetime] = field(default_factory=lambda: datetime.now(tz=timezone.utc))
+class CallIntent(Intent):
 
-    # TODO : now() should probably be a class variable (to be constant and accessible by other classes)
+    args_strat = ()  # TODO : generator / strategy
+    kwargs_strat = {}  # TODO : generator / strategy
 
-    actual: typing.Callable  # representing the thing we intent to experiment by calling it
-    simulation: typing.Any = field(default_factory=dict)  # representing a SIMULATION of the thing that we intent to experiment by calling it
+    def __init__(self, args_strat: typing.Iterable =None, kwargs_strat: typing.Iterable =None):  # TODO match arguments from callable / hypothesis-like
+        object.__setattr__(self, 'args_strat', args_strat if args_strat is not None else random.random(0, 1))
+        object.__setattr__(self, 'kwargs_strat', kwargs_strat if kwargs_strat is not None else random.random(0, 1))
+
+        super(CallIntent, self).__init__()
 
     def __hash__(self):  # make sure the event is hashable (storable in a set)
         return hash(self.targetdate)
 
-    async def __call__(self):  # Note: This is a simulation algorithm !
-        print(f"target: {self.targetdate} clock: {datetime.now(tz=timezone.utc)}")
+    def __call__(self):  # Note: This is a simulation algorithm !
+        #print(f"target: {self.targetdate} clock: {datetime.now(tz=timezone.utc)}")
 
-        self.success = self.simulation()
+        # TODO : proper generator
+        args = random.sample(self.args_strat, 1)[0]
+        kwargs = random.sample(self.kwargs_strat.items(), 1)[0]
+        return (args, kwargs)
 
 
-class CallSchedule(MutableMapping):
+class CallSchedule(Schedule):
     """
-       This is a generic log, as a wallclock-indexed intents datastore (immutable scheduled intent can be almost anything).
-       It is callable, to execute an intent at the current (wall)clock ( ASAP )
        """
 
     # NOTE:DO NOT combine with the log, semantic is quite different
     # => how about events that were not intended and intents that didn't happen ??
-    def __init__(self):
-        self.map = OrderedDict()  # A TREE structure. Indexed by name, but also has a second ordering by priority (ancestry)
-        self._tasks = set()  # currently running tasks
+    def __init__(self, *call_intents: CallIntent):
+        super(CallSchedule, self).__init__(*call_intents)
 
-    @property
-    def first(self):
-        first_timestep = list(self.map.keys())[1]  # taking the most ancient intent
-
-        # heuristic to return only ONE child of the current node  -> CHOICE !
-        # reference : https://en.wikipedia.org/wiki/B*
-        # We rely on the result of the simulation done by the intent (same computation, lower "scale")
-        return self.map[first_timestep]  # take them all
-
-        # Note : calling first again (after completion of one task of the intent schedule tree) will bring another one (we have extra allocated time)
-        # => the tree node having a sibling is an indeterminist "and" (categorical product)
-        # => the tree node having
-
-
-    @dpcontracts.types()
     def __call__(
             self
     ):
-        now = datetime.now(tz=timezone.utc)
-        # prioritize tasks in the current focused timespan (from now())
 
-        for t in self.first:
-            # TODO : heuristic to prioritize tasks
-
-            t.focus.set()  # TODO
-
-        return focus  # time slipping but nothign noticeable here...=> pure side effecty.
-
-
-    def __popper(self):
-        # asynchronously pops intent out of the list when they are satisfied.
-        pass  # TODO
-
-    def __setitem__(self, timestamp, run: CallIntent):
-        # schedule an event into the future !
-        self.map[timestamp] = self.map.get(timestamp, set()) | {run}
-
-    def __delitem__(self, timestamp):
-        self.map.pop(timestamp)
-
-    def __getitem__(self, timestamp):
-        return self.map.get(timestamp, set())
-
-    def __iter__(self):
-        return self.map.__iter__()
-
-    async def __aiter__(self):
-        # TODO : wait a bit and return when time has elapsed.
-        raise NotImplementedError
-
-    def __len__(self):
-        return self.map.__len__()
-
-    def __add__(self, other):
-        # TODO : add mergeable functionality
-        raise NotImplementedError
+        return super(CallSchedule, self).__call__()
 
 
 # def scheduled(schedule: Schedule):
@@ -114,21 +68,23 @@ class CallSchedule(MutableMapping):
 
 
 if __name__ == "__main__":
-    import asyncio
 
-    s = Schedule()
+    args_gen = [ 1,2,3,4,5,6, ]
+    kwargs_gen = {'a':1, 'b': 2}
 
-    i1 = CallIntent()
+    i1 = CallIntent(args_strat= args_gen, kwargs_strat=kwargs_gen)
 
-    i2 = CallIntent()
+    i2 = CallIntent(args_strat= args_gen, kwargs_strat=kwargs_gen)
 
-    s[i1.timestamp] = i1
+    s = CallSchedule(i1, i2)
 
-    s[i2.timestamp] = i2
+    assert s() == i1
 
-    loop = asyncio.get_event_loop()
+    args, kwargs = i1()
 
-    s(loop=loop)  # passing executor to the scheduler
+    assert args in args_gen
+    assert kwargs[0] in kwargs_gen and kwargs[1] == kwargs_gen[kwargs[0]]
 
-    loop.run_forever()
+    assert s() == i2
+
 

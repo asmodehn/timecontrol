@@ -9,12 +9,16 @@ gitchangelog = "*"
 twine = "*"
 wheel = "*"
 black = "*"
+sphinx = "*"
 
 [packages]
 aiounittest = "*"
 hypothesis = "*"
 result = "*"
 dpcontracts = "*"
+mypy = "*"
+pyrsistent = "*"
+typeclasses = "*"
 
 [requires]
 python_version = "3.7"
