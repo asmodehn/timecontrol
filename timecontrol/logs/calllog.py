@@ -19,11 +19,11 @@ from timecontrol.logs.log import Log, Event
 @dataclass(frozen=True)
 class CommandCalled(Event):
     args: typing.Tuple = field(default_factory=tuple)
-    kwargs: typing.Dict = field(default_factory=dict)
+    kwargs: typing.List = field(default_factory=dict)  # TODO : need a hashable type here !
     # TODO : use resolved "bound" arguments, to avoid duplicates... problem : hashing
 
-    def __hash__(self):
-        return hash((super(CommandCalled, self).__hash__(), self.args, frozenset(self.kwargs.items())))
+    # def __hash__(self):
+    #     return hash((super(CommandCalled, self).__hash__(), self.args, frozenset(self.kwargs.items())))
 
 
 class CallLog(Log):  # TODO :see python trace.Trace
@@ -46,7 +46,7 @@ def call_logged(log: CallLog = CallLog()):
     def decorator(cmd):
         # TODO : nice and clean wrapper
         def wrapper(*args, **kwargs):
-            log(CommandCalled(args=args, kwargs=kwargs))
+            log(CommandCalled(args=args, kwargs=kwargs.items()))
             return cmd(*args, **kwargs)
         return wrapper
     return decorator

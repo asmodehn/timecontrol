@@ -8,13 +8,14 @@ import typing
 import dpcontracts
 
 
+# Note : Event must be hashable to be storable in a set.
 @dataclass(frozen=True)
 class Event:
     # todo : support more time representations...
     timestamp: typing.Union[int, datetime] = field(default_factory=lambda: datetime.now(tz=timezone.utc))
 
-    def __hash__(self):  # make sure the event is hashable (storable in a set)
-        return hash(self.timestamp)
+    # def __hash__(self):  # make sure the event is hashable (storable in a set)
+    #     return hash(self.timestamp)
 
 
 class Log(Mapping):

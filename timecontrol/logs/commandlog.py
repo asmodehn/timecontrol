@@ -31,10 +31,10 @@ class CommandRun(CommandReturned):
     @property
     def kwargs(self):
         return self.call.kwargs
-
-    def __hash__(self):
-        """ maintaining only one level of hashing """  # TODO : cleanup hashing strategy. leave it to frozen dataclass for simplicity ?
-        return hash((self.timestamp, self.args, frozenset(self.kwargs.items()), self.result))
+    #
+    # def __hash__(self):
+    #     """ maintaining only one level of hashing """  # TODO : cleanup hashing strategy. leave it to frozen dataclass for simplicity ?
+    #     return hash((self.timestamp, self.args, frozenset(self.kwargs.items()), self.result))
 
 
 class CommandLog(Log):  # TODO :see python trace.Trace

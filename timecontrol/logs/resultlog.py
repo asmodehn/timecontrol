@@ -23,8 +23,8 @@ class CommandReturned(Event):
     # we use result here to keep return "in-band". we dont want "out-of-band" exceptions breaking the control flow...
     result: Result = field(default_factory=lambda: Result.Ok(None))
 
-    def __hash__(self):
-        return hash((super(CommandReturned, self).__hash__(), self.result))
+    # def __hash__(self):
+    #     return hash((super(CommandReturned, self).__hash__(), self.result))
 
 
 class ResultLog(Log):  # TODO :see python trace.Trace

@@ -9,7 +9,8 @@ import time
 import inspect
 from collections.abc import Mapping
 
-from timecontrol.logs.commandlog import CommandLog
+from timecontrol.logs.commandlog import CommandLog, CommandReturned, CommandRun
+from timecontrol.logs.calllog import CommandCalled
 from timecontrol.underlimiter import UnderTimeLimit
 
 # WITH decorator to encourage consistent coding style :
@@ -57,39 +58,40 @@ class CommandRunner(Mapping):
 
     async def __call__(
         self,
-            # TODO : maybe also integrate space representation ehre (agent id, etc.)
+            # TODO : maybe also integrate space representation here (agent id, etc.)
     ):
+        call = CommandCalled(args=self._args, kwargs=[kwa for kwa in self._kwargs.items()])
         try:
             self._sleeping = 0
             #  We cannot assume idempotent like for a function. call in all cases.
             if asyncio.iscoroutinefunction(self._impl):
-                res = self.log(await self._impl(*self._args, **self._kwargs))
-            else:  # also handling the synchronous case, synchronously.
-                res = self.log(self._impl(*self._args, **self._kwargs))
-            self._last_call = self._timer()  # it has been called !
 
+                run = CommandRun(call = call, result=await self._impl(*self._args, **self._kwargs))
+
+            else:  # also handling the synchronous case, synchronously.
+
+                run = CommandRun(call = call, result=self._impl(*self._args, **self._kwargs))
+
+            res = self.log(run)
+            self._last_call = self._timer()  # it has been called !
+            return res
         except UnderTimeLimit as utl:
             # call is forbidden now. we have no choice but wait.
             # We will never know what would have been the result now.
-            self._sleeping = timedelta(utl.expected - utl.elapsed)
+            self._sleeping = timedelta(seconds=utl.expected - utl.elapsed)
 
             if inspect.iscoroutinefunction(
                 self._sleeper
             ):  # because we cannot be sure of our sleeper...
-                await self._sleeper(self._sleeping)
+                await self._sleeper(self._sleeping.seconds)
             else:
-                self._sleeper(self._sleeping)
+                self._sleeper(self._sleeping.seconds)
 
-            res = await self()
+            return await self()
             # Note : we recurse directly here to guarantee ONE call ASAP (usual semantics)
 
         except Exception as exc:
             raise  # reraise anything else !
-            # should handle the case when 'res' is not defined
-        finally:
-            # res should be always defined... unless we got killed during sleep ??
-            # TODO : verify this !!! or change programming construct to provide guarantee ??
-            return res  # Here we can exit of the "async-background" loop as usual
 
     def __getitem__(self, item):
         return self.log.__getitem__(item)
