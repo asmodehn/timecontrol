@@ -15,12 +15,11 @@ control runs one (or more) commands once or more times.
 # Also with the looping behavior on one command...
 import asyncio
 import inspect
-from collections import Mapping
 from datetime import datetime, timedelta
 
 from timecontrol.logs.calllog import CallLog
 from timecontrol.overlimiter import OverTimeLimit, OverLimiter
-from timecontrol.schedules.schedule import Schedule, Intent
+from timecontrol.schedules.controlschedule import ControlSchedule, ControlIntent
 
 
 class ControlRunner():  # TODO : Mapping): # with times?
@@ -30,8 +29,8 @@ class ControlRunner():  # TODO : Mapping): # with times?
         self._cmd = cmd
         self._downtime = None  # None means infinite : the initial value
 
-        # TODO : ControlIntent
-        self.plan = Schedule(Intent())  # asyncio's executor semantics ??
+        # TODO : ControlSchedule
+        self.plan = ControlSchedule(ControlIntent())  # asyncio's executor semantics ??
 
         # -> no looping, one time asap execution as usual.
         self._timer = timer
@@ -56,15 +55,17 @@ class ControlRunner():  # TODO : Mapping): # with times?
 
         if next_evt:  # Falsy if there is nothing to do...
 
+            args, kwargs = next_evt()
+
             # NOte : we dont use tasks just yet -> remote compute LATER
             try:
                 if asyncio.iscoroutinefunction(self._cmd):
-                    res = await self._cmd(*next_evt._args, **next_evt._kwargs)
+                    res = await self._cmd(*args, **kwargs)
                 else:
-                    res = self._cmd(*next_evt._args, **next_evt._kwargs)
+                    res = self._cmd(*args, **kwargs)
                 # TODO : finish timing now !
 
-                assert res == next_evt._result
+                assert res == next_evt.result.expected
 
                 # be able to plugin some learning
                 # TODO !!!
@@ -133,4 +134,4 @@ if __name__ == "__main__":
         print("Running limited tick - period: 3")
         print(datetime.now())
 
-    asyncio.get_event_loop().run_forever()
+    # NOte : This will finish after one run (because main thread is not waiting for the loop to happen!)

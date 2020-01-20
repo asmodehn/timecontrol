@@ -29,7 +29,7 @@ class Expect(Intent):
         return hash(self.targetdate)
 
     def __call__(self, res):  # Note: This is a learning algorithm !
-        # Rtrieve result and compare with expectation
+        # Retrieve result and compare with expectation
         return self.expected - res   # some measure of distance (to be minimized by learner)
 
 

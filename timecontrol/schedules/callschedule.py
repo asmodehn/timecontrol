@@ -37,8 +37,14 @@ class CallIntent(Intent):
         #print(f"target: {self.targetdate} clock: {datetime.now(tz=timezone.utc)}")
 
         # TODO : proper generator
-        args = random.sample(self.args_strat, 1)[0]
-        kwargs = random.sample(self.kwargs_strat.items(), 1)[0]
+        if self.args_strat:
+            args = random.sample(self.args_strat, 1)[0]
+        else:
+            args = tuple()
+        if self.kwargs_strat:
+            kwargs = random.sample(self.kwargs_strat.items(), 1)[0]
+        else:
+            kwargs = dict()
         return (args, kwargs)
 
 
