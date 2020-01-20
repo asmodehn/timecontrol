@@ -37,9 +37,40 @@ class DList():
     It looks like a list, it behaves like a list, but it is not exactly a list
     => it cannot be empty ! We can always get the root (the origin list !) element
 
-    Here we have a semantic of ordering (aimed to be used for explicit time steps - matching usual python iterator semantics).
+    It is also, like DSet, bimonadic in state:
+    >>> three = dlist(1,2,3)  # return
+    >>> three
+    dlist(1,2,3)
 
-    Compared to DSet, it is ... TODO
+    and join / duplicate are "implicit"
+
+    >>> assert three == dlist(three)
+
+    extract is the usual list index __getitem__ call
+    >>> three[2]
+    3
+
+    And bimonadic in time-dimension (for __call__ and __next__):
+
+    # return is done via calling (appends to the list if already exists)
+    >>> five1 = three(4)(5)
+    >>> five2 = three(4,5)
+
+    join/duplicate are "implicit" but rely on python semantics and feel like currying...
+    >>> five1
+    dlist(1,2,3,4,5)
+    >>> five2
+    dlist(1,2,3,4,5)
+
+    extract is done via iterating (the usual stream comonad) in python
+    >>> two_three = next(three)
+    >>> two_three
+    dlist(2,3)
+
+    It is also immutable which means if the result of a call is not stored, it will not persist.
+
+    Compared to DSet, here we have a semantic of ordering.
+
     """
     vector: PVector
 
@@ -49,10 +80,10 @@ class DList():
         self.vector = pvector(args)
 
     def __repr__(self):
-        return f"{repr(self.vector)}"
+        return f"dlist({','.join(str(e) for e in self.vector)})"  # attempting homoiconicity
 
     def __str__(self):
-        return f"{str(list(self.vector))}"
+        return f"[{','.join(str(e) for e in self.vector)}]"  # pretty printing
 
     def __bool__(self):
         """ Falsy if empty, just like vector"""
@@ -67,13 +98,9 @@ class DList():
         contentmatch = id(self.vector) == id(other.vector) or self.vector == other.vector
         return contentmatch
 
-    # NOTE : Probably we do not need the call implementation here.
-    #  We do not need any specific time semantics represented in state
-    #  => scheduling one thing at a time will be done elsewhere.
-    #
-    # We are at the intermediate level, and we do not need to implement any time related feature directly in here...
-    # def __call__(self, *args, **kwargs):
-    #     pass
+    def __call__(self, *elem) -> DList:
+        """ appending to the list """
+        return dlist(*self.vector, *elem)
 
     def __getitem__(self, item: int):  # container (comonadic - state) interface: extract
         if item == len(self.vector):
@@ -117,16 +144,6 @@ def dlist(*elements):
 
 
 if __name__ == '__main__':
-
-    assert dlist() == EmptyDList
-
-    # A Dice - return monad interface in state & time dimensions - => equi-probabilistic distribution...
-    counter = DList(1, 2, 3, 4, 5, 6)
-
-    assert len(counter) == 7
-    # cardinality of the set, but it cannot be empty (there is always something to extract), only itself...
-
-    print(f"Counting up")
-    for c in counter:  # we can be implicit in using iterator here, it has hte usual pyhton semantics (not like for dset)
-        print(c)
+    import doctest
+    doctest.testmod()
 

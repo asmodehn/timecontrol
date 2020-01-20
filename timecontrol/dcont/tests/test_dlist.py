@@ -9,7 +9,7 @@ from timecontrol.dcont.dlist import DList, EmptyDList, dlist
 
 
 class TestDListTime(unittest.TestCase):
-    """ Testing DList is a time - BImonad in python """
+    """ DList is a time(call/next) - BiMonad in python  - and a usual list in the usual state dimension"""
 
     @given(st.data())
     def test_empty_falsy(self, data):
@@ -26,6 +26,10 @@ class TestDListTime(unittest.TestCase):
 
         assert isinstance(dl, DList)
         assert t in dl   # we can check the contents  !  # TODO : on type instead ??
+
+        # monadic return on instance, in time-dimension, via __call__ to make it similar to the type constructor.
+        dlbis = dl(t)
+        assert dlbis == dlist(t, t, t)
 
         # implicit monadic join
         ddl = dlist(dlist(t, t))
