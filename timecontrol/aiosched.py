@@ -26,12 +26,13 @@ _sentinel = object()
 
 class aioscheduler(scheduler):
 
-    def __init__(self, timefunc=_time, delayfunc=asyncio.sleep):
+    def __init__(self, loop=None, timefunc=_time, delayfunc=asyncio.sleep):
         """Initialize a new instance, passing the time and delay
         functions"""
+        self.loop = asyncio.get_event_loop() if loop is None else loop
         super(aioscheduler, self).__init__(timefunc=timefunc, delayfunc=delayfunc)
 
-    async def run(self, blocking=True):
+    async def run(self):
         """Execute events until the queue is empty.
         If blocking is False executes the scheduled events due to
         expire soonest (if any) and then return the deadline of the
@@ -49,11 +50,6 @@ class aioscheduler(scheduler):
         exceptions are not caught but the scheduler's state remains
         well-defined so run() may be called again.
 
-        A questionable hack is added to allow other threads to run:
-        just after an event is executed, a delay of 0 is executed, to
-        avoid monopolizing the CPU when other threads are also
-        runnable.
-
         """
         # localize variable access to minimize overhead
         # and to improve thread safety
@@ -62,10 +58,9 @@ class aioscheduler(scheduler):
         delayfunc = self.delayfunc
         timefunc = self.timefunc
         pop = heapq.heappop
-        while True:
+
+        if q:
             with lock:
-                if not q:
-                    break
                 time, priority, action, argument, kwargs = q[0]
                 now = timefunc()
                 if time > now:
@@ -74,31 +69,38 @@ class aioscheduler(scheduler):
                     delay = False
                     pop(q)
             if delay:
-                if not blocking:
-                    return time - now
                 await delayfunc(time - now)
             else:
-                action(*argument, **kwargs)
-                await delayfunc(0)   # Let other threads run
+                await action(*argument, **kwargs)
+            self.loop.create_task(self.run())
+        else:
+            # if no queue, we do not loop any longer
+            self.loop.stop()
 
 
 if __name__ == '__main__':
 
+    # create loop
+    l = asyncio.get_event_loop()
 
-    s = aioscheduler(time.time, asyncio.sleep)
+    s = aioscheduler(loop=l, timefunc=time.time, delayfunc=asyncio.sleep)
 
-    def print_time(a='default'):
+    async def print_time(a='default'):
+         await asyncio.sleep(1)
          print("From print_time", time.time(), a)
 
     async def print_some_times():
-         print(time.time())
+         print(f"Start planning {time.time()}")
          s.enter(10, 1, print_time)
          s.enter(5, 2, print_time, argument=('positional',))
          s.enter(5, 1, print_time, kwargs={'a': 'keyword'})
          await s.run()
-         print(time.time())
+         print(f"End planning {time.time()}")
 
-    asyncio.run(print_some_times())  # The schedule
+    l.create_task(print_some_times())
+    # The schedule
+
+    l.run_forever()
     # 930343690.257
     # From print_time 930343695.274 positional
     # From print_time 930343695.275 keyword
