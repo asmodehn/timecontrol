@@ -11,32 +11,28 @@ implement a delay. Both of these can be asynchronous
 Events are usual python's schedule events. see sched.py for reference.
 """
 import asyncio
+import inspect
 import time
 import heapq
 from collections import namedtuple
 import threading
 from time import monotonic as _time
 
-from sched import Event, scheduler
-
-#class Event(namedtuple('Event', 'time, priority, action, argument, kwargs')):
-
-_sentinel = object()
+from sched import scheduler
 
 
 class aioscheduler(scheduler):
 
-    def __init__(self, loop=None, timefunc=_time, delayfunc=asyncio.sleep):
+    def __init__(self, timefunc=_time, delayfunc=asyncio.sleep, loop=None):
         """Initialize a new instance, passing the time and delay
         functions"""
         self.loop = asyncio.get_event_loop() if loop is None else loop
         super(aioscheduler, self).__init__(timefunc=timefunc, delayfunc=delayfunc)
 
-    async def run(self):
+    async def run(self, blocking=False):
         """Execute events until the queue is empty.
-        If blocking is False executes the scheduled events due to
-        expire soonest (if any) and then return the deadline of the
-        next scheduled call in the scheduler.
+        If blocking is True, keeps control via a while loop, just like the sync scheduler.
+        By default it is non-blocking, returning as soon as waiting or call has been done.
 
         When there is a positive delay until the first event, the
         delay function is called and the event is left in the queue;
@@ -59,7 +55,9 @@ class aioscheduler(scheduler):
         timefunc = self.timefunc
         pop = heapq.heappop
 
-        if q:
+        # TODO : keep track of reentrant calls...
+
+        while q:
             with lock:
                 time, priority, action, argument, kwargs = q[0]
                 now = timefunc()
@@ -69,13 +67,17 @@ class aioscheduler(scheduler):
                     delay = False
                     pop(q)
             if delay:
-                await delayfunc(time - now)
-            else:
-                await action(*argument, **kwargs)
-            self.loop.create_task(self.run())
-        else:
-            # if no queue, we do not loop any longer
-            self.loop.stop()
+                if not blocking:
+                    self.loop.create_task(self.run(True))
+                    # background blocking loop to still execute the action later
+                    return time - now
+                else:
+                    await delayfunc(time - now)
+            elif callable(action):
+                if inspect.iscoroutinefunction(action):
+                    await action(*argument, **kwargs)
+                else:
+                    action(*argument, **kwargs)
 
 
 if __name__ == '__main__':
