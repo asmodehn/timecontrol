@@ -16,10 +16,11 @@ class TestTimeInterval(unittest.TestCase):
     @given(dt1=infer, dt2= infer, data=data())
     def test_non_periodic(self, dt1:datetime, dt2:datetime, data):
         # we have to plan for timedeltas to avoid overflows
+        # Note we limit ourselves to a minimum micro second precision...
         ti1 = TimeInterval(datetime=dt1, precision=data.draw(timedeltas(
-            min_value=timedelta(), max_value=min(dt1 - datetime(year=MINYEAR, month=1, day=1), datetime(year=MAXYEAR, month=12, day=31) - dt1))))
+            min_value=timedelta(microseconds=1), max_value=min(dt1 - datetime(year=MINYEAR, month=1, day=1), datetime(year=MAXYEAR, month=12, day=31) - dt1))))
         ti2 = TimeInterval(datetime=dt2, precision=data.draw(timedeltas(
-            min_value=timedelta(), max_value=min(dt2 - datetime(year=MINYEAR, month=1, day=1), datetime(year=MAXYEAR, month=12, day=31) - dt2))))
+            min_value=timedelta(microseconds=1), max_value=min(dt2 - datetime(year=MINYEAR, month=1, day=1), datetime(year=MAXYEAR, month=12, day=31) - dt2))))
 
         def assert_all(t1:TimeInterval, t2:TimeInterval, after:bool = False, before:bool = False, meets:bool = False, overlaps:bool = False, during:bool = False, starts:bool = False, equal:bool = False, finishes:bool = False):
             # before/after
@@ -48,11 +49,11 @@ class TestTimeInterval(unittest.TestCase):
             assert ti1 > ti2 and ti2 < ti1
             assert_all(ti1, ti2, after=True)
         # meets
-        # Note : meets can also be equal if precision == 0
+        # Note : meets can also be equal if precisions are equals
         elif dt1 + ti1.precision/2 == dt2 - ti2.precision/2:
-            assert_all(ti1, ti2, meets=True, equal= ti1.precision == ti2.precision == timedelta())
+            assert_all(ti1, ti2, meets=True, equal= ti1.precision == ti2.precision)
         elif dt2 + ti2.precision/2 == dt1 - ti1.precision/2:
-            assert_all(ti2, ti1, meets=True, equal= ti1.precision == ti2.precision == timedelta())
+            assert_all(ti2, ti1, meets=True, equal= ti1.precision == ti2.precision)
         # overlaps
         elif dt2 + ti2.precision /2 > dt1 + ti1.precision / 2 > dt2 - ti2.precision / 2 > dt1 - ti1.precision/2:
             assert_all(ti1, ti2, overlaps=True)
@@ -61,10 +62,10 @@ class TestTimeInterval(unittest.TestCase):
         # during
         elif dt1 - ti1.precision/2 > dt2 - ti2.precision/2 and dt1 + ti1.precision/2 < dt2 + ti2.precision/2:
             assert ti1 in ti2
-            assert_all(ti2, ti1, during=True)
+            assert_all(ti1, ti2, during=True)
         elif dt2 - ti2.precision/2 > dt1 - ti1.precision/2 and dt2 + ti2.precision/2 < dt1 + ti1.precision/2:
             assert ti2 in ti1
-            assert_all(ti1, ti2, during=True)
+            assert_all(ti2, ti1, during=True)
         # starts or equal
         elif dt2 - ti2.precision/2 == dt1 - ti1.precision/2:
             if dt2 + ti2.precision/2 < dt1 + ti1.precision/2:

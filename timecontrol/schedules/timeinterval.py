@@ -105,7 +105,7 @@ def timeinterval(begin: datetime = None, duration=None, end=None, period=None) -
     if begin is None:
         begin =  datetime.now()
     if duration is None:
-        duration = second
+        duration = microsecond  # This is troublesome because non overlapping intervals can become overlapping... TODO : change minimal unit
     # end and period are not mandatory
     if end is None and period is None:
         return TimeInterval(datetime=begin - duration/2, precision=duration)
