@@ -63,10 +63,10 @@ class TimeInterval:
         return self.inf == other.sup
 
     def overlaps(self, other):
-        return self.sup > other.inf
+        return self.inf < other.inf < self.sup < other.sup
 
     def overlaps_inv(self, other):
-        return self.inf < other.sup
+        return other.inf < self.inf < other.sup < self.sup
 
     def starts(self, other):
         return self.inf == other.inf and self.sup < other.sup
@@ -75,10 +75,10 @@ class TimeInterval:
         return self.inf == other.inf and self.sup > other.sup
 
     def during(self, other):
-        return self.inf > other.inf and self.sup < other.sup
+        return other.inf < self.inf and self.sup < other.sup
 
     def during_inv(self, other):
-        return self.inf < other.inf and self.sup > other.sup
+        return self.inf < other.inf and other.sup < self.sup
 
     def __contains__(self, item):
         return self.during_inv(item)
