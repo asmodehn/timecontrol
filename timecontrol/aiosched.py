@@ -74,6 +74,8 @@ class aioscheduler(scheduler):
                 else:
                     await delayfunc(time - now)
             elif callable(action):
+                # Note : we are outside of control flow:
+                #  Result cannot be returned, it must be retrieved from some log.
                 if inspect.iscoroutinefunction(action):
                     await action(*argument, **kwargs)
                 else:

@@ -57,28 +57,28 @@ def command_logged(log: CommandLog = CommandLog()):
 
         def wrapper(*args, **kwargs):
             # tying together call_logged and result_logged here following python call semantics (1 call :1 result)
-            call = CommandCalled(args=args, kwargs=kwargs)
+            call = CommandCalled(args=args, kwargs=list(kwargs.items()))
             try:
                 res = cmd(*args, **kwargs)
                 result = Result.Ok(res)
+                return res
             except Exception as exc:
                 result = Result.Err(exc)
             finally:
                 log(CommandRun(call=call, result=result))
-                return result
 
         async def async_wrapper(*args,
                                 **kwargs):
             # tying together call_logged and result_logged here following python call semantics (1 call :1 result)
-            call = CommandCalled(args=args, kwargs=kwargs)
+            call = CommandCalled(args=args, kwargs=list(kwargs.items()))
             try:
                 res = await cmd(*args, **kwargs)
                 result = Result.Ok(res)
+                return res
             except Exception as exc:
                 result = Result.Err(exc)
             finally:
                 log(CommandRun(call=call, result=result))
-                return result
 
         if inspect.iscoroutinefunction(cmd):
             return async_wrapper
@@ -123,8 +123,11 @@ if __name__ == '__main__':
 
         loop = asyncio.get_event_loop() if loop is None else loop
 
+        # This will run later, returning a Result
         loop.create_task(rand(42))
-        loop.create_task(rand(51))
+
+        # But direct calls return usual response
+        print(await rand(51))
 
     asyncio.get_event_loop().run_until_complete(scheduler())
 

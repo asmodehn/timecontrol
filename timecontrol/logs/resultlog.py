@@ -1,12 +1,5 @@
-import datetime
-import inspect
-import time
-from collections import OrderedDict
-from collections.abc import Mapping
-from collections import namedtuple
-import functools
 from dataclasses import dataclass, field
-
+from datetime import datetime, timezone
 import typing
 
 import dpcontracts
@@ -22,6 +15,7 @@ from result import Result
 class CommandReturned(Event):
     # we use result here to keep return "in-band". we dont want "out-of-band" exceptions breaking the control flow...
     result: Result = field(default_factory=lambda: Result.Ok(None))
+    result_timestamp: typing.Union[int, datetime] = field(default_factory=lambda: datetime.now(tz=timezone.utc))
 
     # def __hash__(self):
     #     return hash((super(CommandReturned, self).__hash__(), self.result))

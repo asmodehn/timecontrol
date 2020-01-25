@@ -40,8 +40,12 @@ class Log(Mapping):
     ):
         # if already called for this time, store a set (undeterminism)
         # TODO : not duplicate timestamp here...
-        self.map[event.timestamp] = self.map.get(event.timestamp, set()) | {event}
+        self.map[event.timestamp] = self.map.get(event.timestamp, list()) + [event]
+        # TODO : SET is better here(but require hashable). List doesn't...
         return event  # identity from the caller point of view. pure side-effecty.
+
+        # TODO : be more than just writing to external system (file/db/etc.)...
+        #  Need to "plug into" set of events, in order to have them extracted (customizable) to somewhere else...
 
     # TODO : maybe just delegate to OrderedDict ? BETTER : mappingproxy ! -> immutable
     def __getitem__(self, timestamp):
@@ -49,10 +53,6 @@ class Log(Mapping):
 
     def __iter__(self):
         return self.map.__iter__()
-
-    async def __aiter__(self):
-        # TODO : wait a bit and return when time has elapsed.
-        raise NotImplementedError
 
     def __len__(self):
         return self.map.__len__()
