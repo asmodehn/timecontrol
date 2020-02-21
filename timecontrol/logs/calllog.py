@@ -1,4 +1,4 @@
-import datetime
+from datetime import datetime, timezone
 import inspect
 import time
 from collections import OrderedDict
@@ -11,19 +11,10 @@ import typing
 
 import dpcontracts
 
-from timecontrol.logs.log import Log, Event
+from timecontrol.logs.events import CommandCalled
+from timecontrol.logs.log import Log
 
 # TODO : different kinds of !structured! log / dataframes, etc.
-
-
-@dataclass(frozen=True)
-class CommandCalled(Event):
-    args: typing.Tuple = field(default_factory=tuple)
-    kwargs: typing.List = field(default_factory=dict)  # TODO : need a hashable type here !
-    # TODO : use resolved "bound" arguments, to avoid duplicates... problem : hashing
-
-    # def __hash__(self):
-    #     return hash((super(CommandCalled, self).__hash__(), self.args, frozenset(self.kwargs.items())))
 
 
 class CallLog(Log):  # TODO :see python trace.Trace
@@ -44,9 +35,13 @@ class CallLog(Log):  # TODO :see python trace.Trace
 
 def call_logged(log: CallLog = CallLog()):
     def decorator(cmd):
+        sig = inspect.signature(cmd)
         # TODO : nice and clean wrapper
         def wrapper(*args, **kwargs):
-            log(CommandCalled(args=args, kwargs=kwargs.items()))
+            # checking arguments binding early
+            bound_args = sig.bind(*args, **kwargs)
+            bound_args.apply_defaults()
+            log(CommandCalled(bound_arguments=bound_args))
             return cmd(*args, **kwargs)
         return wrapper
     return decorator
