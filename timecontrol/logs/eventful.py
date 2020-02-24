@@ -1,3 +1,4 @@
+import asyncio
 import inspect
 import time
 from dataclasses import dataclass
@@ -49,8 +50,27 @@ class CommandReturnedLate(CommandReturned):
         object.__setattr__(self, "timestamp_bound", timestamp_bound)
         super(CommandReturnedLate, self).__init__(result=result, timestamp=timestamp)
 
+#
+# CommandEvent = typing.Union[CommandCalled, CommandReturned]
 
-CommandEvent = typing.Union[CommandCalled, CommandReturned]
+
+TimePeriod = typing.Union[timedelta, int]
+TimePoint = typing.Union[datetime, int]
+
+
+def default_sync_sleeper(delay: TimePeriod):
+    if isinstance(delay, timedelta):
+        time.sleep(delay.seconds)
+    else:
+        time.sleep(delay)
+
+
+def default_async_sleeper(delay: TimePeriod):
+    if isinstance(delay, timedelta):
+        asyncio.sleep(delay=delay.seconds)
+    else:
+        asyncio.sleep(delay=
+                      delay)
 
 
 class EventfulDef:
@@ -95,15 +115,23 @@ class EventfulDef:
     """
 
     def __init__(self, cmd,
-                 period_min: typing.Optional[timedelta] = None,
-                 period_max: typing.Optional[timedelta] = None,
-                 timer: typing.Callable[[], datetime] = datetime.now):
+                 ratelimit: typing.Optional[TimePeriod] = None,
+                 timeframe: typing.Optional[TimePeriod] = None,
+                 timer: typing.Callable[[], TimePoint] = datetime.now,
+                 sleeper: typing.Callable[[TimePeriod], None] = lambda x: None):
         self.cmd = cmd
         self._sig = inspect.signature(self.cmd)
         self.timer = timer
 
-        self.period_min = period_min
-        self.period_max = period_max
+        # This is here only to allow dependency injection for testing
+        self._sleeper = default_sync_sleeper if sleeper is None else sleeper
+
+        #: https://en.wikipedia.org/wiki/Rate_limiting
+        # But this is expressed in time units (minimal guaranteed "no-call" period)
+        self.ratelimit = ratelimit
+
+        #: https://en.wikipedia.org/wiki/Temporal_resolution
+        self.timeframe = timeframe
 
         self._last = self.timer()
         # Setting last as now, to prevent accidental bursts on creation.
@@ -111,46 +139,58 @@ class EventfulDef:
         self._inner_last = datetime(year=MINYEAR, month=1, day=1)
         # Setting last as long time ago, to force speedup on creation.
 
-    def __call__(self, *args, **kwargs):
+    def _call_event(self, *args, bound_args: inspect.BoundArguments = None, **kwargs) -> typing.Union[
+                                              typing.Tuple[CommandCalled, inspect.BoundArguments],
+                                              typing.Tuple[timedelta, inspect.BoundArguments]]:
+        if bound_args is None:
+            # checking arguments binding early
+            bound_args = self._sig.bind(*args, **kwargs)
+            bound_args.apply_defaults()
 
-        # checking arguments binding early
-        bound_args = self._sig.bind(*args, **kwargs)
-        bound_args.apply_defaults()
-
-        if self.period_min:
+        if self.ratelimit:
             # Measure time
             now = self.timer()
 
             # sleep if needed (this can be addressed locally)
-            if now - self._last < self.period_min:
+            if now - self._last < self.ratelimit:
                 # Call too fast.
                 # sleeps expected time period - already elapsed time
-                time.sleep((self.period_min - (now - self._last)).seconds)
+                return self.ratelimit - (now - self._last), bound_args
             else:
                 self._last = now
 
-        yield CommandCalled(timestamp=self.timer(), bound_arguments=bound_args)
+        # We have to duplicate bound arguments here, since that type is not serializable...
+        return CommandCalled(timestamp=self.timer(), bound_arguments=bound_args), bound_args
+
+    def _result_event(self, e) -> CommandReturned:
+        # Measure time
+        inner_now = self.timer()
+
+        result = Result.Ok(e)
+        if self.timeframe and inner_now - self._inner_last > self.timeframe:
+            # Call too slow
+            # Log exception (we cannot do anything locally - it is up to the scheduler who scheduled us)
+            ret = CommandReturnedLate(result=result, timestamp_bound=self._inner_last + self.timeframe,
+                                      timestamp=self.timer())
+        else:
+            ret = CommandReturned(result=result, timestamp=self.timer())
+
+        # need to do that after the > period check !
+        self._inner_last = inner_now
+
+        return ret
+
+    def __call__(self, *args, **kwargs):
+
+        call_event, bound_args = self._call_event(*args, **kwargs)
+        while isinstance(call_event, (int, timedelta)):  # the intent is to sleep
+            self._sleeper(call_event)
+            call_event, bound_args = self._call_event(bound_args=bound_args)
 
         try:
             res = self.cmd(*bound_args.args, **bound_args.kwargs)
 
-            # local closure to avoid code duplication here
-            def result_event(e) -> CommandReturned:
-                # Measure time
-                inner_now = self.timer()
-
-                result = Result.Ok(e)
-                if self.period_max and inner_now - self._inner_last > self.period_max:
-                    # Call too slow
-                    # Log exception (we cannot do anything locally - it is up to the scheduler who scheduled us)
-                    ret = CommandReturnedLate(result=result, timestamp_bound=self._inner_last + self.period_max, timestamp=self.timer())
-                else:
-                    ret = CommandReturned(result=result, timestamp=self.timer())
-
-                # need to do that after the > period check !
-                self._inner_last = inner_now
-
-                return ret
+            yield call_event  # yielding after the call !
 
             if inspect.isgenerator(res):
                 # Note this execution flow is linear (one or more result).
@@ -158,13 +198,13 @@ class EventfulDef:
                     # Note: the loop being at this level, shows that this generator
                     # should not access resources "out of system border".
                     # In this case everything is supposedly "internal" (ie in python interpreter process).
-                    yield result_event(e)
+                    yield self._result_event(e)
                     # Note: this internally can return result with a "late" result type.
                     # This is a signal for an external system to do something (nothing can be done in here)
             else:
                 # Note this execution flow is affine (zero or at most one result) but with python exception handling,
                 #  we attempt make it exactly one (useful to get determinism for "in-system" usecases)
-                yield result_event(res)
+                yield self._result_event(res)
             return
         except Exception as exc:
             result = Result.Err(exc)
@@ -172,7 +212,7 @@ class EventfulDef:
             raise  # to propagate any unexpected exception (the usual expected behavior)
 
 
-class AsyncEventfulDef:
+class AsyncEventfulDef(EventfulDef):
     """
     The async version of An Eventful Gen Def.
     This wraps a python async definition in another async generator, timing values yielded.
@@ -228,66 +268,110 @@ class AsyncEventfulDef:
 
     """
 
-    def __init__(self, cmd, timer: typing.Callable[[], datetime] = datetime.now):
-        self.cmd = cmd
-        self._sig = inspect.signature(self.cmd)
-        self.timer = timer
+    def __init__(self, cmd,
+                 ratelimit: typing.Optional[timedelta] = None,
+                 timeframe: typing.Optional[timedelta] = None,
+                 timer: typing.Callable[[], datetime] = datetime.now,
+                 sleeper: typing.Callable[[timedelta], None] = lambda x: None):
+
+        # We need to override default sleeper for the async case.
+        sleeper = default_async_sleeper if sleeper is None else sleeper
+
+        super(AsyncEventfulDef, self).__init__(cmd=cmd,
+                                               ratelimit=ratelimit,
+                                               timeframe=timeframe,
+                                               timer=timer,
+                                               sleeper=sleeper)
 
     async def __call__(self, *args, **kwargs):
-        # checking arguments binding early
-        bound_args = self._sig.bind(*args, **kwargs)
-        bound_args.apply_defaults()
 
-        yield CommandCalled(timestamp=self.timer(), bound_arguments=bound_args)
+        call_event, bound_args = self._call_event(*args, **kwargs)
+        yield call_event
 
-        # Note this execution flow is affine (zero or at most one result) but with python exception handling,
-        #  we attempt make it exactly one result (useful to get determinism for "in-system" usecases)
         try:
-
             res = self.cmd(*bound_args.args, **bound_args.kwargs)
-            try:
-                if inspect.isasyncgen(res):
-                    async for e in res:
-                        # Note : this being an async generator, we are expected to "wait some time" between each call.
-                        # We will interract with "out of system" processes,
-                        #  and can expect few things (provided they match python interpreter's capabilities...)
-                        result = Result.Ok(e)
-                        yield CommandReturned(result=result, timestamp=self.timer())
-                    # This should be in a 'finally' clause, if we could get rid of undertimelimit case
-                    return
-                else:
-                    result = Result.Ok(await res)
-                    yield CommandReturned(result=result, timestamp=self.timer())
-                    # This should be in a 'finally' clause, if we could get rid of undertimelimit case
-                    return
-            except UnderTimeLimit as utl:
-                # TODO : this maybe a sign we need a different design for underlimit
-                #  so that log doesnt have to be aware of it...
-                raise  # raise without logging
 
-        except OverTimeLimit as utl:
-            # TODO : this maybe a sign we need a different design for underlimit
-            #  so that log doesnt have to be aware of it...
-            raise  # raise without logging
+            if inspect.isasyncgen(res):
+                # Note this execution flow is linear (one or more result).
+                async for e in res:
+                    # Note: the loop being at this level, shows that this generator
+                    # should not access resources "out of system border".
+                    # In this case everything is supposedly "internal" (ie in python interpreter process).
+                    yield self._result_event(e)
+                    # Note: this internally can return result with a "late" result type.
+                    # This is a signal for an external system to do something (nothing can be done in here)
+            else:
+                # Note this execution flow is affine (zero or at most one result) but with python exception handling,
+                #  we attempt make it exactly one (useful to get determinism for "in-system" usecases)
+                yield self._result_event(await res)
+            return
         except Exception as exc:
             result = Result.Err(exc)
             yield CommandReturned(result=result, timestamp=self.timer())
-            # This should be in a 'finally' clause, if we could get rid of undertimelimit case
             raise  # to propagate any unexpected exception (the usual expected behavior)
 
 
-def eventful(timer: typing.Callable[[], datetime] = datetime.now):
+        #
+        #
+        # # checking arguments binding early
+        # bound_args = self._sig.bind(*args, **kwargs)
+        # bound_args.apply_defaults()
+        #
+        # yield CommandCalled(timestamp=self.timer(), bound_arguments=bound_args)
+        #
+        # # Note this execution flow is affine (zero or at most one result) but with python exception handling,
+        # #  we attempt make it exactly one result (useful to get determinism for "in-system" usecases)
+        # try:
+        #
+        #     res = self.cmd(*bound_args.args, **bound_args.kwargs)
+        #     try:
+        #         if inspect.isasyncgen(res):
+        #             async for e in res:
+        #                 # Note : this being an async generator, we are expected to "wait some time" between each call.
+        #                 # We will interract with "out of system" processes,
+        #                 #  and can expect few things (provided they match python interpreter's capabilities...)
+        #                 result = Result.Ok(e)
+        #                 yield CommandReturned(result=result, timestamp=self.timer())
+        #             # This should be in a 'finally' clause, if we could get rid of undertimelimit case
+        #             return
+        #         else:
+        #             result = Result.Ok(await res)
+        #             yield CommandReturned(result=result, timestamp=self.timer())
+        #             # This should be in a 'finally' clause, if we could get rid of undertimelimit case
+        #             return
+        #     except UnderTimeLimit as utl:
+        #         # TODO : this maybe a sign we need a different design for underlimit
+        #         #  so that log doesnt have to be aware of it...
+        #         raise  # raise without logging
+        #
+        # except OverTimeLimit as utl:
+        #     # TODO : this maybe a sign we need a different design for underlimit
+        #     #  so that log doesnt have to be aware of it...
+        #     raise  # raise without logging
+        # except Exception as exc:
+        #     result = Result.Err(exc)
+        #     yield CommandReturned(result=result, timestamp=self.timer())
+        #     # This should be in a 'finally' clause, if we could get rid of undertimelimit case
+        #     raise  # to propagate any unexpected exception (the usual expected behavior)
+
+
+def eventful(
+        ratelimit: typing.Optional[TimePeriod] = None,
+        timeframe: typing.Optional[TimePeriod] = None,
+        timer: typing.Callable[[], TimePoint] = datetime.now,
+        sleeper: typing.Callable[[TimePeriod], None]=None):
     # Note :
-    #  - pydef command -> event generator
-    #  - async pydef command -> async event generator
-    #  - generator -> event generator
-    #  - async generator -> async event generator
+    #  - pydef command | generator -> event generator
+    #  - async pydef command  | async generator-> async event generator
+
     def decorator(cmd):
 
-        if inspect.isfunction(cmd):
-            wrapped = EventfulDef(cmd=cmd, timer=timer)
+        if inspect.isfunction(cmd) or inspect.ismethod(cmd):
+            wrapped = EventfulDef(cmd=cmd, ratelimit=ratelimit, timeframe=timeframe, timer=timer,
+                                  sleeper = sleeper)  # let the class handle default sleeper
         elif inspect.iscoroutine(cmd):
-            wrapped = AsyncEventfulDef(cmd=cmd, timer=timer)
+            wrapped = AsyncEventfulDef(cmd=cmd, ratelimit=ratelimit, timeframe=timeframe, timer=timer,
+                                       sleeper=sleeper)  # let the class handle default sleeper
         else:
             raise NotImplementedError
         return wrapped
