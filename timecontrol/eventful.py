@@ -50,8 +50,8 @@ class CommandReturnedLate(CommandReturned):
         object.__setattr__(self, "timestamp_bound", timestamp_bound)
         super(CommandReturnedLate, self).__init__(result=result, timestamp=timestamp)
 
-#
-# CommandEvent = typing.Union[CommandCalled, CommandReturned]
+
+Event = typing.Union[CommandCalled, CommandReturned, CommandReturnedLate]
 
 
 TimePeriod = typing.Union[timedelta, int]
@@ -107,6 +107,8 @@ class EventfulDef:
     CommandReturned(timestamp=datetime.datetime(...), result=Ok(42))
     CommandReturned(timestamp=datetime.datetime(...), result=Ok(43))
     CommandReturned(timestamp=datetime.datetime(...), result=Ok(44))
+
+    https://docs.python.org/3/reference/expressions.html#yield-expressions
 
     Note : attempting to split the call/return couple seems to lead to a different, more functional,
      more elementary/low-level design, which doesn't seem to be a good fit for python.
@@ -181,35 +183,37 @@ class EventfulDef:
         return ret
 
     def __call__(self, *args, **kwargs):
-
-        call_event, bound_args = self._call_event(*args, **kwargs)
-        while isinstance(call_event, (int, timedelta)):  # the intent is to sleep
-            self._sleeper(call_event)
-            call_event, bound_args = self._call_event(bound_args=bound_args)
-
         try:
-            res = self.cmd(*bound_args.args, **bound_args.kwargs)
+            call_event, bound_args = self._call_event(*args, **kwargs)
+            while isinstance(call_event, (int, timedelta)):  # the intent is to sleep
+                self._sleeper(call_event)
+                call_event, bound_args = self._call_event(bound_args=bound_args)
 
-            yield call_event  # yielding after the call !
+            try:
+                res = self.cmd(*bound_args.args, **bound_args.kwargs)
 
-            if inspect.isgenerator(res):
-                # Note this execution flow is linear (one or more result).
-                for e in res:
-                    # Note: the loop being at this level, shows that this generator
-                    # should not access resources "out of system border".
-                    # In this case everything is supposedly "internal" (ie in python interpreter process).
-                    yield self._result_event(e)
-                    # Note: this internally can return result with a "late" result type.
-                    # This is a signal for an external system to do something (nothing can be done in here)
-            else:
-                # Note this execution flow is affine (zero or at most one result) but with python exception handling,
-                #  we attempt make it exactly one (useful to get determinism for "in-system" usecases)
-                yield self._result_event(res)
-            return
-        except Exception as exc:
-            result = Result.Err(exc)
-            yield CommandReturned(result=result, timestamp=self.timer())
-            raise  # to propagate any unexpected exception (the usual expected behavior)
+                yield call_event  # yielding after the call !
+
+                if inspect.isgenerator(res):
+                    # Note this execution flow is linear (one or more result).
+                    for e in res:
+                        # Note: the loop being at this level, shows that this generator
+                        # should not access resources "out of system border".
+                        # In this case everything is supposedly "internal" (ie in python interpreter process).
+                        yield self._result_event(e)
+                        # Note: this internally can return result with a "late" result type.
+                        # This is a signal for an external system to do something (nothing can be done in here)
+                else:
+                    # Note this execution flow is affine (zero or at most one result) but with python exception handling,
+                    #  we attempt make it exactly one (useful to get determinism for "in-system" usecases)
+                    yield self._result_event(res)
+                return
+            except Exception as exc:
+                result = Result.Err(exc)
+                yield CommandReturned(result=result, timestamp=self.timer())
+                raise  # to propagate any unexpected exception (the usual expected behavior)
+        except GeneratorExit as ge:
+            raise  # Nothing to cleanup, just end it right now.
 
 
 class AsyncEventfulDef(EventfulDef):
@@ -260,6 +264,7 @@ class AsyncEventfulDef(EventfulDef):
     CommandReturned(timestamp=datetime.datetime(...), result=Ok(43))
     CommandReturned(timestamp=datetime.datetime(...), result=Ok(44))
 
+    Ref : https://docs.python.org/3/reference/expressions.html#asynchronous-generator-functions
 
     Note : attempting to merge this with other EventfulDef leads to a different, more functional,
      more elementary/low-level) design, which doesn't seem to be a good fit for python.
@@ -284,32 +289,35 @@ class AsyncEventfulDef(EventfulDef):
                                                sleeper=sleeper)
 
     async def __call__(self, *args, **kwargs):
-
-        call_event, bound_args = self._call_event(*args, **kwargs)
-        yield call_event
-
         try:
-            res = self.cmd(*bound_args.args, **bound_args.kwargs)
+            call_event, bound_args = self._call_event(*args, **kwargs)
+            yield call_event
 
-            if inspect.isasyncgen(res):
-                # Note this execution flow is linear (one or more result).
-                async for e in res:
-                    # Note: the loop being at this level, shows that this generator
-                    # should not access resources "out of system border".
-                    # In this case everything is supposedly "internal" (ie in python interpreter process).
-                    yield self._result_event(e)
-                    # Note: this internally can return result with a "late" result type.
-                    # This is a signal for an external system to do something (nothing can be done in here)
-            else:
-                # Note this execution flow is affine (zero or at most one result) but with python exception handling,
-                #  we attempt make it exactly one (useful to get determinism for "in-system" usecases)
-                yield self._result_event(await res)
-            return
-        except Exception as exc:
-            result = Result.Err(exc)
-            yield CommandReturned(result=result, timestamp=self.timer())
-            raise  # to propagate any unexpected exception (the usual expected behavior)
+            try:
+                res = self.cmd(*bound_args.args, **bound_args.kwargs)
 
+                if inspect.isasyncgen(res):
+                    # Note this execution flow is linear (one or more result).
+                    async for e in res:
+                        # Note: the loop being at this level, shows that this generator
+                        # should not access resources "out of system border".
+                        # In this case everything is supposedly "internal" (ie in python interpreter process).
+                        yield self._result_event(e)
+                        # Note: this internally can return result with a "late" result type.
+                        # This is a signal for an external system to do something (nothing can be done in here)
+                else:
+                    # Note this execution flow is affine (zero or at most one result) but with python exception handling,
+                    #  we attempt make it exactly one (useful to get determinism for "in-system" usecases)
+                    yield self._result_event(await res)
+                return
+
+            except Exception as exc:
+                result = Result.Err(exc)
+                yield CommandReturned(result=result, timestamp=self.timer())
+                raise  # to propagate any unexpected exception (the usual expected behavior)
+
+        except GeneratorExit as ge:
+            raise  # Nothing to cleanup, just end it right now.
 
         #
         #
@@ -366,10 +374,10 @@ def eventful(
 
     def decorator(cmd):
 
-        if inspect.isfunction(cmd) or inspect.ismethod(cmd):
+        if not inspect.iscoroutinefunction(cmd) and (inspect.isfunction(cmd) or inspect.ismethod(cmd)):
             wrapped = EventfulDef(cmd=cmd, ratelimit=ratelimit, timeframe=timeframe, timer=timer,
                                   sleeper = sleeper)  # let the class handle default sleeper
-        elif inspect.iscoroutine(cmd):
+        elif inspect.iscoroutinefunction(cmd):
             wrapped = AsyncEventfulDef(cmd=cmd, ratelimit=ratelimit, timeframe=timeframe, timer=timer,
                                        sleeper=sleeper)  # let the class handle default sleeper
         else:
