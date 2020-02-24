@@ -3,7 +3,7 @@ import unittest
 
 import aiounittest
 
-from ..eventful import eventful, EventfulDef, CommandCalled, CommandReturned
+from timecontrol.eventful import eventful, CommandCalled, CommandReturned
 
 
 class TestEventful(aiounittest.AsyncTestCase):
@@ -35,7 +35,7 @@ class TestEventful(aiounittest.AsyncTestCase):
         self.command_call = False
         self.generator_call = False
 
-    async def test_eventful_pydef(self):
+    def test_eventful_pydef(self):
         lc = eventful(timer=self.timer, sleeper=self.sleeper)(self.cmdimpl)
 
         assert self.command_call == False
@@ -59,7 +59,7 @@ class TestEventful(aiounittest.AsyncTestCase):
 
         assert si.exception  # TODO : test exception details
 
-    async def test_eventful_pydef_ratelimit(self):
+    def test_eventful_pydef_ratelimit(self):
         lc = eventful(ratelimit=3, timer=self.timer, sleeper=self.sleeper)(self.cmdimpl)
 
         assert self.command_call == False
@@ -111,7 +111,11 @@ class TestEventful(aiounittest.AsyncTestCase):
         assert self.slept == 0
         assert self.command_call == True
 
-    async def test_eventful_pygen(self):
+    # TODO
+    # def test_eventful_pydef_ratelimit_timeframe(self):
+    #     raise NotImplementedError
+
+    def test_eventful_pygen(self):
         lc = eventful(timer=self.timer, sleeper=self.sleeper)(self.genimpl)
 
         assert self.generator_call == False
@@ -122,7 +126,7 @@ class TestEventful(aiounittest.AsyncTestCase):
         # next() returns the event of the call itself.
         assert isinstance(next(lc_one), CommandCalled)
         # CAREFUL HERE ! GENERATOR HAS NOT BEEN actually CALLED UNTIL NEXT() !
-        # This is in line with python semantics... but different from usual pydef !
+        # This is in line with python semantics... but different from usual pydef for our events !
         assert self.generator_call == False
 
         # next() then triggers, and returns the result event...
@@ -142,7 +146,16 @@ class TestEventful(aiounittest.AsyncTestCase):
             next(lc_one)
 
         assert si.exception  # TODO : test exception details
-#
+
+    # TODO
+    # def test_eventful_pygen_ratelimit(self):
+    #     raise NotImplementedError
+
+    # TODO
+    # def test_eventful_pygen_ratelimit_timeframe(self):
+    #     raise NotImplementedError
+
+# TODO : ASYNC test !
 # class TestAsyncEventful(TestEventful):
 #
 #     async def cmdimpl(self, *args):
@@ -156,3 +169,7 @@ class TestEventful(aiounittest.AsyncTestCase):
 #         yield 1
 #         yield 2
 #         return
+
+
+if __name__ == '__main__':
+    unittest.main()
