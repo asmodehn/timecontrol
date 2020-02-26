@@ -11,6 +11,19 @@ from timecontrol.underlimiter import UnderTimeLimit
 from timecontrol.overlimiter import OverTimeLimit
 
 
+# the simplest implementation of hashable frozendict, waiting for a standard one in python (see PEP 416 for more info)
+def frozendict(mydict: dict = None):
+    return frozenset([
+            # we need to recursively support dict in values
+            (e[0], frozendict(e[1])) if isinstance(e[1], dict)
+            else e  # otherwise just pass the bound argument directly (tuples are hashable)
+            for e in mydict.items()
+        ])
+# immutable (frozen) => readonly (more than MappingProxyType)
+# + Hashable => Like a namedtuple but dynamically assigning keys
+# TODO maybe : + directed container / implicit bimonad => collapse all nested dicts to only one level.
+
+
 @dataclass(frozen=True, init=False)
 class CommandCalled:
     # TODO : more time representation
@@ -18,11 +31,12 @@ class CommandCalled:
     bound_args: typing.FrozenSet  # we need a frozenset here to be hashable
 
     def __init__(self, bound_arguments: inspect.BoundArguments, timestamp: typing.Union[int, datetime] = None):
+        # TODO : maybe apply default here to make sure...
         if timestamp is None:
             timestamp = datetime.now(tz=timezone.utc)
         object.__setattr__(self, "timestamp", timestamp)
-        # we change bound arguments to a frozenset (to be hashable)
-        object.__setattr__(self, "bound_args", frozenset(bound_arguments.arguments.items()))
+        # we change bound arguments to a frozendict (to be hashable)
+        object.__setattr__(self, "bound_args", frozendict(bound_arguments.arguments))
         # This should be all we need. and we don't need mutability as it is already final
         # Also order doesnt matter as they are already bound to a name (right ?)
 
@@ -319,49 +333,6 @@ class AsyncEventfulDef(EventfulDef):
         except GeneratorExit as ge:
             raise  # Nothing to cleanup, just end it right now.
 
-        #
-        #
-        # # checking arguments binding early
-        # bound_args = self._sig.bind(*args, **kwargs)
-        # bound_args.apply_defaults()
-        #
-        # yield CommandCalled(timestamp=self.timer(), bound_arguments=bound_args)
-        #
-        # # Note this execution flow is affine (zero or at most one result) but with python exception handling,
-        # #  we attempt make it exactly one result (useful to get determinism for "in-system" usecases)
-        # try:
-        #
-        #     res = self.cmd(*bound_args.args, **bound_args.kwargs)
-        #     try:
-        #         if inspect.isasyncgen(res):
-        #             async for e in res:
-        #                 # Note : this being an async generator, we are expected to "wait some time" between each call.
-        #                 # We will interract with "out of system" processes,
-        #                 #  and can expect few things (provided they match python interpreter's capabilities...)
-        #                 result = Result.Ok(e)
-        #                 yield CommandReturned(result=result, timestamp=self.timer())
-        #             # This should be in a 'finally' clause, if we could get rid of undertimelimit case
-        #             return
-        #         else:
-        #             result = Result.Ok(await res)
-        #             yield CommandReturned(result=result, timestamp=self.timer())
-        #             # This should be in a 'finally' clause, if we could get rid of undertimelimit case
-        #             return
-        #     except UnderTimeLimit as utl:
-        #         # TODO : this maybe a sign we need a different design for underlimit
-        #         #  so that log doesnt have to be aware of it...
-        #         raise  # raise without logging
-        #
-        # except OverTimeLimit as utl:
-        #     # TODO : this maybe a sign we need a different design for underlimit
-        #     #  so that log doesnt have to be aware of it...
-        #     raise  # raise without logging
-        # except Exception as exc:
-        #     result = Result.Err(exc)
-        #     yield CommandReturned(result=result, timestamp=self.timer())
-        #     # This should be in a 'finally' clause, if we could get rid of undertimelimit case
-        #     raise  # to propagate any unexpected exception (the usual expected behavior)
-
 
 def eventful(
         ratelimit: typing.Optional[TimePeriod] = None,
@@ -380,8 +351,16 @@ def eventful(
         elif inspect.iscoroutinefunction(cmd):
             wrapped = AsyncEventfulDef(cmd=cmd, ratelimit=ratelimit, timeframe=timeframe, timer=timer,
                                        sleeper=sleeper)  # let the class handle default sleeper
+        elif inspect.isclass(cmd):
+            # If the wrapped object is already a class,
+            # we first manage the class instantiation before wrapping in eventful generator
+            # TODO : change this to just wrap the __call__ and avoid any modification to the rest of the class
+            def wrapped(*args, **kwargs):
+                cmd_instance = cmd(*args, **kwargs)
+                return EventfulDef(cmd=cmd_instance, ratelimit=ratelimit, timeframe=timeframe, timer=timer, sleeper=sleeper)
+            # Note: to trigger events on class instantiation, it should be wrapped in [an actor or in]??? another pydef... TODO !
         else:
-            raise NotImplementedError
+            raise NotImplementedError(f" Unknown thing : {cmd}")
         return wrapped
 
     return decorator
