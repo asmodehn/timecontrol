@@ -17,7 +17,7 @@ from timecontrol.eventful import (
 )
 
 
-def eventful(
+def eventful(#TODO : pass event store in decorator.
         #: https://en.wikipedia.org/wiki/Rate_limiting
         # But this is expressed in time units (minimal guaranteed "no-call" period)
         ratelimit: typing.Optional[TimePeriod] = None,
@@ -79,123 +79,132 @@ def eventful(
 
         _eventlog = OrderedDict()
 
-        if inspect.iscoroutinefunction(wrapped):
+        @wrapt.decorator
+        async def async_eventful_wrapper(wrapped, instance, args, kwargs):
 
             # This is here only to allow dependency injection for testing
             _sleeper = default_async_sleeper if sleeper is None else sleeper
 
-            @wrapt.decorator
-            async def eventful_wrapper(wrapped, instance, args, kwargs):
+            if instance is not None and not hasattr(instance, "eventlog"):
+                # then the log should be here (but only assign the first time
+                instance.eventlog = _eventlog
+
+            try:  # call time
+
+                sig = inspect.signature(wrapped)
+                # checking arguments binding early
+                bound_args = sig.bind(*args, **kwargs)
+                bound_args.apply_defaults()
+
+                call_event = _call_event(bound_args=bound_args)
+                _eventlog[call_event.timestamp] = call_event
+
+                yield call_event
 
                 try:
+                    res = wrapped(*bound_args.args, **bound_args.kwargs)
 
-                    sig = inspect.signature(wrapped)
-                    # checking arguments binding early
-                    bound_args = sig.bind(*args, **kwargs)
-                    bound_args.apply_defaults()
-
-                    call_event = _call_event(bound_args=bound_args)
-                    _eventlog[call_event.timestamp] = call_event
-
-                    yield call_event
-
-                    try:
-                        res = wrapped(*bound_args.args, **bound_args.kwargs)
-
-                        if inspect.isasyncgen(res):
-                            # Note this execution flow is linear (one or more result).
-                            async for e in res:
-                                # Note: the loop being at this level, shows that this generator
-                                # should not access resources "out of system border".
-                                # In this case everything is supposedly "internal" (ie in python interpreter process).
-                                res_evt = _result_event(e)
-                                _eventlog[res_evt.timestamp] = res_evt
-                                yield res_evt
-                                # Note: this internally can return result with a "late" result type.
-                                # This is a signal for an external system to do something (nothing can be done in here)
-                        else:
-                            # Note this execution flow is affine (zero or at most one result) but with python exception handling,
-                            #  we attempt make it exactly one (useful to get determinism for "in-system" usecases)
-                            res_evt = _result_event(await res)
+                    if inspect.isasyncgen(res):
+                        # Note this execution flow is linear (one or more result).
+                        async for e in res:
+                            # Note: the loop being at this level, shows that this generator
+                            # should not access resources "out of system border".
+                            # In this case everything is supposedly "internal" (ie in python interpreter process).
+                            res_evt = _result_event(e)
                             _eventlog[res_evt.timestamp] = res_evt
                             yield res_evt
-                        return
-
-                    except Exception as exc:
-                        result = Result.Err(exc)
-                        res_evt = CommandReturned(result=result, timestamp=timer())
+                            # Note: this internally can return result with a "late" result type.
+                            # This is a signal for an external system to do something (nothing can be done in here)
+                    else:
+                        # Note this execution flow is affine (zero or at most one result) but with python exception handling,
+                        #  we attempt make it exactly one (useful to get determinism for "in-system" usecases)
+                        res_evt = _result_event(await res)
                         _eventlog[res_evt.timestamp] = res_evt
                         yield res_evt
-                        raise  # to propagate any unexpected exception (the usual expected behavior)
+                    return
 
-                except GeneratorExit as ge:
-                    raise  # Nothing to cleanup, just end it right now.
+                except Exception as exc:
+                    result = Result.Err(exc)
+                    res_evt = CommandReturned(result=result, timestamp=timer())
+                    _eventlog[res_evt.timestamp] = res_evt
+                    yield res_evt
+                    raise  # to propagate any unexpected exception (the usual expected behavior)
 
-            wrap = eventful_wrapper
-        else:
+            except GeneratorExit as ge:
+                raise  # Nothing to cleanup, just end it right now.
+
+        @wrapt.decorator
+        def eventful_wrapper(wrapped, instance, args, kwargs):
 
             # This is here only to allow dependency injection for testing
             _sleeper = default_sync_sleeper if sleeper is None else sleeper
 
-            @wrapt.decorator
-            def eventful_wrapper(wrapped, instance, args, kwargs):
+            if instance is not None and not hasattr(instance, "eventlog"):
+                # then the log should be here (but only assign the first time
+                instance.eventlog = _eventlog
 
-                # call time
-                try:
+            try:  # call time
 
-                    sig = inspect.signature(wrapped)
-                    # checking arguments binding early
-                    bound_args = sig.bind(*args, **kwargs)
-                    bound_args.apply_defaults()
+                sig = inspect.signature(wrapped)
+                # checking arguments binding early
+                bound_args = sig.bind(*args, **kwargs)
+                bound_args.apply_defaults()
 
+                call_event = _call_event(bound_args=bound_args)
+
+                while isinstance(call_event, (int, timedelta)):  # the intent is to sleep
+                    _sleeper(call_event)
                     call_event = _call_event(bound_args=bound_args)
 
-                    while isinstance(call_event, (int, timedelta)):  # the intent is to sleep
-                        _sleeper(call_event)
-                        call_event = _call_event(bound_args=bound_args)
+                try:
+                    res = wrapped(*bound_args.args, **bound_args.kwargs)
 
+                    _eventlog[call_event.timestamp] = call_event
+                    yield call_event  # yielding after the call !
 
-                    try:
-                        res = wrapped(*bound_args.args, **bound_args.kwargs)
-
-                        _eventlog[call_event.timestamp] = call_event
-                        yield call_event  # yielding after the call !
-
-                        if inspect.isgenerator(res):
-                            # Note this execution flow is linear (one or more result).
-                            for e in res:
-                                # Note: the loop being at this level, shows that this generator
-                                # should not access resources "out of system border".
-                                # In this case everything is supposedly "internal" (ie in python interpreter process).
-                                res_evt = _result_event(res)
-                                _eventlog[res_evt.timestamp] = res_evt
-                                yield res_evt
-                                # Note: this internally can return result with a "late" result type.
-                                # This is a signal for an external system to do something (nothing can be done in here)
-                        else:
-                            # Note this execution flow is affine (zero or at most one result) but with python exception handling,
-                            #  we attempt make it exactly one (useful to get determinism for "in-system" usecases)
-                            res_evt = _result_event(res)
+                    if inspect.isgenerator(res):
+                        # Note this execution flow is linear (one or more result).
+                        for e in res:
+                            # Note: the loop being at this level, shows that this generator
+                            # should not access resources "out of system border".
+                            # In this case everything is supposedly "internal" (ie in python interpreter process).
+                            res_evt = _result_event(e)
                             _eventlog[res_evt.timestamp] = res_evt
                             yield res_evt
-                        return
-                    except Exception as exc:
-                        result = Result.Err(exc)
-                        res_evt = CommandReturned(result=result, timestamp=timer())
+                            # Note: this internally can return result with a "late" result type.
+                            # This is a signal for an external system to do something (nothing can be done in here)
+                    else:
+                        # Note this execution flow is affine (zero or at most one result) but with python exception handling,
+                        #  we attempt make it exactly one (useful to get determinism for "in-system" usecases)
+                        res_evt = _result_event(res)
                         _eventlog[res_evt.timestamp] = res_evt
                         yield res_evt
-                        raise  # to propagate any unexpected exception (the usual expected behavior)
-                except GeneratorExit as ge:
-                    raise  # Nothing to cleanup, just end it right now.)
-            wrap = eventful_wrapper
+                    return
+                except Exception as exc:
+                    result = Result.Err(exc)
+                    res_evt = CommandReturned(result=result, timestamp=timer())
+                    _eventlog[res_evt.timestamp] = res_evt
+                    yield res_evt
+                    raise  # to propagate any unexpected exception (the usual expected behavior)
+            except GeneratorExit as ge:
+                raise  # Nothing to cleanup, just end it right now.)
 
-        wrapper = wrap(wrapped)
+        if inspect.isclass(wrapped):
+            #TODO : in the meta class ???
+            raise NotImplementedError
 
-        # TODO : patch wrap to add a logstream.
-        wrapper.log = _eventlog
-        # TODO : improve !
+        elif inspect.ismethod(wrapped):
+            wrap = eventful_wrapper(wrapped)
+            # the log will be set on the instance on the first call (cannot be on the method)
 
-        return wrapper
+        elif inspect.iscoroutinefunction(wrapped):
+            wrap = async_eventful_wrapper(wrapped)
+            wrap.log = _eventlog
+        else:
+            wrap = eventful_wrapper(wrapped)
+            wrap.log = _eventlog
+            # TODO : patch wrap to add a logstream.
+        return wrap
     return decorator
 
 
