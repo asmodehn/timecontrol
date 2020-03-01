@@ -253,7 +253,7 @@ def eventful(#TODO : pass event store in decorator.
         _eventlog = OrderedDict()
 
         @wrapt.decorator
-        async def async_eventful_wrapper(wrapped, instance, args, kwargs):
+        async def async_eventful_generator(wrapped, instance, args, kwargs):
 
             # This is here only to allow dependency injection for testing
             _sleeper = default_async_sleeper if sleeper is None else sleeper
@@ -262,52 +262,118 @@ def eventful(#TODO : pass event store in decorator.
                 # then the log should be here (but only assign the first time
                 instance.eventlog = _eventlog
 
-            try:  # call time
+            sig = inspect.signature(wrapped)
+            # checking arguments binding early
+            bound_args = sig.bind(*args, **kwargs)
+            bound_args.apply_defaults()
 
-                sig = inspect.signature(wrapped)
-                # checking arguments binding early
-                bound_args = sig.bind(*args, **kwargs)
-                bound_args.apply_defaults()
+            call_event = _call_event(bound_args=bound_args)
+            _eventlog[call_event.timestamp] = call_event
 
-                call_event = _call_event(bound_args=bound_args)
-                _eventlog[call_event.timestamp] = call_event
+            # yield call_event
 
-                yield call_event
+            try:
+                res = wrapped(*bound_args.args, **bound_args.kwargs)
 
-                try:
-                    res = wrapped(*bound_args.args, **bound_args.kwargs)
-
-                    if inspect.isasyncgen(res):
-                        # Note this execution flow is linear (one or more result).
-                        async for e in res:
-                            # Note: the loop being at this level, shows that this generator
-                            # should not access resources "out of system border".
-                            # In this case everything is supposedly "internal" (ie in python interpreter process).
-                            res_evt = _result_event(e)
-                            _eventlog[res_evt.timestamp] = res_evt
-                            yield res_evt
-                            # Note: this internally can return result with a "late" result type.
-                            # This is a signal for an external system to do something (nothing can be done in here)
-                    else:
-                        # Note this execution flow is affine (zero or at most one result) but with python exception handling,
-                        #  we attempt make it exactly one (useful to get determinism for "in-system" usecases)
-                        res_evt = _result_event(await res)
-                        _eventlog[res_evt.timestamp] = res_evt
-                        yield res_evt
-                    return
-
-                except Exception as exc:
-                    result = Result.Err(exc)
-                    res_evt = CommandReturned(result=result, timestamp=timer())
+                # Note this execution flow is linear (one or more result).
+                async for e in res:
+                    # Note: the loop being at this level, shows that this generator
+                    # should not access resources "out of system border".
+                    # In this case everything is supposedly "internal" (ie in python interpreter process).
+                    res_evt = _result_event(e)
                     _eventlog[res_evt.timestamp] = res_evt
-                    yield res_evt
-                    raise  # to propagate any unexpected exception (the usual expected behavior)
+                    yield e
+                    # Note: this internally can return result with a "late" result type.
+                    # This is a signal for an external system to do something (nothing can be done in here)
+                return
 
-            except GeneratorExit as ge:
-                raise  # Nothing to cleanup, just end it right now.
+            except Exception as exc:
+                result = Result.Err(exc)
+                res_evt = CommandReturned(result=result, timestamp=timer())
+                _eventlog[res_evt.timestamp] = res_evt
+                raise  # to propagate any unexpected exception (the usual expected behavior)
 
         @wrapt.decorator
-        def eventful_wrapper(wrapped, instance, args, kwargs):
+        async def async_eventful_function(wrapped, instance, args, kwargs):
+
+            # This is here only to allow dependency injection for testing
+            _sleeper = default_async_sleeper if sleeper is None else sleeper
+
+            if instance is not None and not hasattr(instance, "eventlog"):
+                # then the log should be here (but only assign the first time
+                instance.eventlog = _eventlog
+
+            sig = inspect.signature(wrapped)
+            # checking arguments binding early
+            bound_args = sig.bind(*args, **kwargs)
+            bound_args.apply_defaults()
+
+            call_event = _call_event(bound_args=bound_args)
+            _eventlog[call_event.timestamp] = call_event
+
+            # yield call_event
+
+            try:
+                res = await wrapped(*bound_args.args, **bound_args.kwargs)
+
+                # Note this execution flow is affine (zero or at most one result) but with python exception handling,
+                #  we attempt make it exactly one (useful to get determinism for "in-system" usecases)
+                res_evt = _result_event(res)
+                _eventlog[res_evt.timestamp] = res_evt
+                return res
+
+            except Exception as exc:
+                result = Result.Err(exc)
+                res_evt = CommandReturned(result=result, timestamp=timer())
+                _eventlog[res_evt.timestamp] = res_evt
+                raise  # to propagate any unexpected exception (the usual expected behavior)
+
+        @wrapt.decorator
+        def eventful_generator(wrapped, instance, args, kwargs):
+
+            # This is here only to allow dependency injection for testing
+            _sleeper = default_sync_sleeper if sleeper is None else sleeper
+
+            if instance is not None and not hasattr(instance, "eventlog"):
+                # then the log should be here (but only assign the first time)
+                instance.eventlog = _eventlog
+
+            sig = inspect.signature(wrapped)
+            # checking arguments binding early
+            bound_args = sig.bind(*args, **kwargs)
+            bound_args.apply_defaults()
+
+            call_event = _call_event(bound_args=bound_args)
+
+            while isinstance(call_event, (int, timedelta)):  # the intent is to sleep
+                _sleeper(call_event)
+                call_event = _call_event(bound_args=bound_args)
+
+            try:
+                res = wrapped(*bound_args.args, **bound_args.kwargs)
+
+                _eventlog[call_event.timestamp] = call_event
+                yield call_event  # yielding after the call !
+
+                # Note this execution flow is linear (one or more result).
+                for e in res:
+                    # Note: the loop being at this level, shows that this generator
+                    # should not access resources "out of system border".
+                    # In this case everything is supposedly "internal" (ie in python interpreter process).
+                    res_evt = _result_event(e)
+                    _eventlog[res_evt.timestamp] = res_evt
+                    yield e
+                    # Note: this internally can return result with a "late" result type.
+                    # This is a signal for an external system to do something (nothing can be done in here)
+                return
+            except Exception as exc:
+                result = Result.Err(exc)
+                res_evt = CommandReturned(result=result, timestamp=timer())
+                _eventlog[res_evt.timestamp] = res_evt
+                raise  # to propagate any unexpected exception (the usual expected behavior)
+
+        @wrapt.decorator
+        def eventful_function(wrapped, instance, args, kwargs):
 
             # This is here only to allow dependency injection for testing
             _sleeper = default_sync_sleeper if sleeper is None else sleeper
@@ -316,66 +382,61 @@ def eventful(#TODO : pass event store in decorator.
                 # then the log should be here (but only assign the first time
                 instance.eventlog = _eventlog
 
-            try:  # call time
+            sig = inspect.signature(wrapped)
+            # checking arguments binding early
+            bound_args = sig.bind(*args, **kwargs)
+            bound_args.apply_defaults()
 
-                sig = inspect.signature(wrapped)
-                # checking arguments binding early
-                bound_args = sig.bind(*args, **kwargs)
-                bound_args.apply_defaults()
+            call_event = _call_event(bound_args=bound_args)
 
+            while isinstance(call_event, (int, timedelta)):  # the intent is to sleep
+                _sleeper(call_event)
                 call_event = _call_event(bound_args=bound_args)
 
-                while isinstance(call_event, (int, timedelta)):  # the intent is to sleep
-                    _sleeper(call_event)
-                    call_event = _call_event(bound_args=bound_args)
+            try:
+                res = wrapped(*bound_args.args, **bound_args.kwargs)
 
-                try:
-                    res = wrapped(*bound_args.args, **bound_args.kwargs)
+                _eventlog[call_event.timestamp] = call_event
 
-                    _eventlog[call_event.timestamp] = call_event
-                    yield call_event  # yielding after the call !
+                # Note this execution flow is affine (zero or at most one result) but with python exception handling,
+                #  we attempt make it exactly one (useful to get determinism for "in-system" usecases)
+                res_evt = _result_event(res)
+                _eventlog[res_evt.timestamp] = res_evt
+                return res
 
-                    if inspect.isgenerator(res):
-                        # Note this execution flow is linear (one or more result).
-                        for e in res:
-                            # Note: the loop being at this level, shows that this generator
-                            # should not access resources "out of system border".
-                            # In this case everything is supposedly "internal" (ie in python interpreter process).
-                            res_evt = _result_event(e)
-                            _eventlog[res_evt.timestamp] = res_evt
-                            yield res_evt
-                            # Note: this internally can return result with a "late" result type.
-                            # This is a signal for an external system to do something (nothing can be done in here)
-                    else:
-                        # Note this execution flow is affine (zero or at most one result) but with python exception handling,
-                        #  we attempt make it exactly one (useful to get determinism for "in-system" usecases)
-                        res_evt = _result_event(res)
-                        _eventlog[res_evt.timestamp] = res_evt
-                        yield res_evt
-                    return
-                except Exception as exc:
-                    result = Result.Err(exc)
-                    res_evt = CommandReturned(result=result, timestamp=timer())
-                    _eventlog[res_evt.timestamp] = res_evt
-                    yield res_evt
-                    raise  # to propagate any unexpected exception (the usual expected behavior)
-            except GeneratorExit as ge:
-                raise  # Nothing to cleanup, just end it right now.)
+            except Exception as exc:
+                result = Result.Err(exc)
+                res_evt = CommandReturned(result=result, timestamp=timer())
+                _eventlog[res_evt.timestamp] = res_evt
+                raise  # to propagate any unexpected exception (the usual expected behavior)
+
 
         if inspect.isclass(wrapped):
             #TODO : store log in the meta class ???
-            wrap = eventful_wrapper(wrapped)  # wrapping the init of the class
+            wrap = eventful_function(wrapped)  # wrapping the init of the class
+            # the log will be set on the instance on the first call (cannot be on the class)
 
-        elif inspect.ismethod(wrapped):
-            wrap = eventful_wrapper(wrapped)
-            # the log will be set on the instance on the first call (cannot be on the method)
+        # checking for async first, to avoid too much if-nesting
+        elif inspect.isasyncgenfunction(wrapped):  # for some reason asyncgen is not a coroutine... (py3.7)
+            wrap = async_eventful_generator(wrapped)
 
         elif inspect.iscoroutinefunction(wrapped):
-            wrap = async_eventful_wrapper(wrapped)
-            wrap.log = _eventlog
+            wrap = async_eventful_function(wrapped)
+
+        # then the more general case
+        elif inspect.isfunction(wrapped):
+            if inspect.isgeneratorfunction(wrapped):
+                wrap = eventful_generator(wrapped)
+            else:
+                wrap = eventful_function(wrapped)
+
+        # did we forget any usecase ?
         else:
-            wrap = eventful_wrapper(wrapped)
-            wrap.log = _eventlog
+            raise NotImplementedError(f"eventful doesnt support decorating {wrapped}")
+
+        if not inspect.ismethod(wrapped):
+            wrap.eventlog = _eventlog
+        # else the log will be set on the instance on the first call (cannot be on the method)
 
         return wrap
     return decorator
@@ -431,30 +492,29 @@ if __name__ == '__main__':
 
 
     print("function")
-    # print(function())
-    for e in function():
+    print(function())
+    for e in function.eventlog.values():
         print(e)
 
     print("generator")
     for r in generator():
         print(r)
 
-    for e in generator():
+    for e in generator.eventlog.values():
         print(e)
 
     async def async_runtime():
         print("async function")
-        async for r in async_function():
-            print(r)
+        print(await async_function())
 
-        for e in function():
+        for e in function.eventlog.values():
             print(e)
 
         print("async generator")
-        for r in async_generator():
+        async for r in async_generator():
             print(r)
 
-        for e in function():
+        for e in async_generator.eventlog.values():
             print(e)
 
     asyncio.run(async_runtime())
