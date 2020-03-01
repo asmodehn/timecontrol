@@ -17,62 +17,7 @@ import typing
 import wrapt
 import functools
 
-
-# the simplest implementation of hashable frozendict, waiting for a standard one in python (see PEP 416 for more info)
-def frozendict(mydict: dict = None):
-    return frozenset([
-            # we need to recursively support dict in values
-            (e[0], frozendict(e[1])) if isinstance(e[1], dict)
-            else e  # otherwise just pass the bound argument directly (tuples are hashable)
-            for e in mydict.items()
-        ])
-# immutable (frozen) => readonly (more than MappingProxyType)
-# + Hashable => Like a namedtuple but dynamically assigning keys
-# TODO maybe : + directed container / implicit bimonad => collapse all nested dicts to only one level.
-
-
-@dataclass(frozen=True, init=False)
-class CommandCalled:
-    # TODO : more time representation
-    timestamp: typing.Union[int, datetime]
-    bound_args: typing.FrozenSet  # we need a frozenset here to be hashable
-
-    def __init__(self, bound_arguments: inspect.BoundArguments, timestamp: typing.Union[int, datetime] = None):
-        # TODO : maybe apply default here to make sure...
-        if timestamp is None:
-            timestamp = datetime.now(tz=timezone.utc)
-        object.__setattr__(self, "timestamp", timestamp)
-        # we change bound arguments to a frozendict (to be hashable)
-        object.__setattr__(self, "bound_args", frozendict(bound_arguments.arguments))
-        # This should be all we need. and we don't need mutability as it is already final
-        # Also order doesnt matter as they are already bound to a name (right ?)
-
-
-@dataclass(frozen=True, init=False)
-class CommandReturned:
-    # TODO : more time representation
-    timestamp: typing.Union[int, datetime]
-    # we use result here to keep return "in-band". we don't want "out-of-band" exceptions breaking the control flow...
-    result: Result
-
-    def __init__(self, result: Result, timestamp: typing.Union[int, datetime] = None):
-        if timestamp is None:
-            timestamp = datetime.now(tz=timezone.utc)
-        object.__setattr__(self, "timestamp", timestamp)
-        object.__setattr__(self, "result", result)
-
-
-@dataclass(frozen=True, init=False)
-class CommandReturnedLate(CommandReturned):
-    # TODO : more time representation
-    timestamp_bound: typing.Union[int, datetime]
-
-    def __init__(self, result: Result, timestamp_bound: typing.Union[int, datetime], timestamp: typing.Union[int, datetime] = None):
-        object.__setattr__(self, "timestamp_bound", timestamp_bound)
-        super(CommandReturnedLate, self).__init__(result=result, timestamp=timestamp)
-
-
-Event = typing.Union[CommandCalled, CommandReturned, CommandReturnedLate]
+from timecontrol.events import CommandCalled, CommandReturned, CommandReturnedLate
 
 
 TimePeriod = typing.Union[timedelta, int]
@@ -94,7 +39,7 @@ def default_async_sleeper(delay: TimePeriod):
                       delay)
 
 
-def eventful(#TODO : pass event store in decorator.
+def eventful(# TODO pass log:  = None,
         #: https://en.wikipedia.org/wiki/Rate_limiting
         # But this is expressed in time units (minimal guaranteed "no-call" period)
         ratelimit: typing.Optional[TimePeriod] = None,
@@ -105,101 +50,116 @@ def eventful(#TODO : pass event store in decorator.
         timer: typing.Callable[[], TimePoint] = datetime.now,
         sleeper: typing.Callable[[TimePeriod], None]=None):
     """
-        An Eventful Generator.
-        This wraps a python pydef definition into a generator of events
+    An Eventful Generator.
+    This wraps a python pydef definition into a generator of events
 
-        >>> def inc(a: int):
-        ...    return a+1
-        >>> einc = generator()(inc)
+    >>> def inc(a: int):
+    ...    return a+1
+    >>> einc = eventful()(inc)
 
-        >>> print(einc)  # doctest: +ELLIPSIS
-        <function inc at 0x...>
-        >>> for e in einc(41):
-        ...    print(e)  # doctest: +ELLIPSIS
-        CommandCalled(timestamp=datetime.datetime(...), bound_args=frozenset({('a', 41)}))
-        CommandReturned(timestamp=datetime.datetime(...), result=Ok(42))
+    >>> print(einc)  # doctest: +ELLIPSIS
+    <function inc at 0x...>
+    >>> einc(41)
+    42
+    >>> for e in einc.eventlog.values():
+    ...    print(e)  # doctest: +ELLIPSIS
+    CommandCalled(timestamp=datetime.datetime(...), bound_args=frozenset({('a', 41)}))
+    CommandReturned(timestamp=datetime.datetime(...), result=Ok(42))
 
-        Note it works as well for generators, wrapping yielded values in events:
-        This wraps a python generator definition in another generator, timing values yielded.
+    Note it works as well for generators, wrapping yielded values in events:
+    This wraps a python generator definition in another generator, timing values yielded.
 
-        >>> def inc(a: int):
-        ...    yield a+1
-        ...    yield a+2
-        ...    yield a+3
+    >>> def inc(a: int):
+    ...    yield a+1
+    ...    yield a+2
+    ...    yield a+3
 
-        >>> einc = generator()(inc)
+    >>> einc = eventful()(inc)
 
-        >>> print(einc)  # doctest: +ELLIPSIS
-        <__main__.EventfulDef object at 0x...>
-        >>> for e in einc(41):
-        ...    print(e)  # doctest: +ELLIPSIS
-        CommandCalled(timestamp=datetime.datetime(...), bound_args=frozenset({('a', 41)}))
-        CommandReturned(timestamp=datetime.datetime(...), result=Ok(42))
-        CommandReturned(timestamp=datetime.datetime(...), result=Ok(43))
-        CommandReturned(timestamp=datetime.datetime(...), result=Ok(44))
+    >>> print(einc)  # doctest: +ELLIPSIS
+    <function inc at 0x...>
+    >>> for e in einc(41):
+    ...    print(e)
+    42
+    43
+    44
+    >>> for e in einc.eventlog.values():
+    ...    print(e)  # doctest: +ELLIPSIS
+    CommandCalled(timestamp=datetime.datetime(...), bound_args=frozenset({('a', 41)}))
+    CommandReturned(timestamp=datetime.datetime(...), result=Ok(42))
+    CommandReturned(timestamp=datetime.datetime(...), result=Ok(43))
+    CommandReturned(timestamp=datetime.datetime(...), result=Ok(44))
 
-        https://docs.python.org/3/reference/expressions.html#yield-expressions
+    https://docs.python.org/3/reference/expressions.html#yield-expressions
 
-        The async version works similarly.
+    The async version works similarly.
 
-        >>> import asyncio
-        >>> async def inc(a: int):
-        ...     await asyncio.sleep(1)
-        ...     return a+1
+    >>> import asyncio
+    >>> async def inc(a: int):
+    ...     await asyncio.sleep(1)
+    ...     return a+1
 
-        >>> ainc = generator()(inc)
+    >>> ainc = eventful()(inc)
 
-        >>> print(ainc)  # doctest: +ELLIPSIS
-        <__main__.AsyncEventfulDef object at 0x...>
+    >>> print(ainc)  # doctest: +ELLIPSIS
+    <function inc at 0x...>
 
-        Here we need an coroutine to run it, since python root level is synchronous:
-        >>> async def arun(agen):
-        ...     async for e in ainc(41):
-        ...         print(e)
-        >>> asyncio.run(arun(agen=ainc))  # doctest: +ELLIPSIS
-        CommandCalled(timestamp=datetime.datetime(...), bound_args=frozenset({('a', 41)}))
-        CommandReturned(timestamp=datetime.datetime(...), result=Ok(42))
-
-
-        This works as well for async generator:
-        This wraps a python async definition in an async generator, timing call and return.
-        >>> import asyncio
-        >>> async def inc(a: int):
-        ...     await asyncio.sleep(1)
-        ...     yield a+1
-        ...     yield a+2
-        ...     yield a+3
-
-        >>> ainc = generator()(inc)
-
-        >>> print(ainc)  # doctest: +ELLIPSIS
-        <__main__.AsyncEventfulDef object at 0x...>
-
-        Here we need an coroutine to run it, since python root level is synchronous:
-        >>> async def arun(agen):
-        ...     async for e in ainc(41):
-        ...         await asyncio.sleep(1)
-        ...         print(e)
-        >>> asyncio.run(arun(agen=ainc))  # doctest: +ELLIPSIS
-        CommandCalled(timestamp=datetime.datetime(...), bound_args=frozenset({('a', 41)}))
-        CommandReturned(timestamp=datetime.datetime(...), result=Ok(42))
-        CommandReturned(timestamp=datetime.datetime(...), result=Ok(43))
-        CommandReturned(timestamp=datetime.datetime(...), result=Ok(44))
-
-        Ref : https://docs.python.org/3/reference/expressions.html#asynchronous-generator-functions
+    Here we need an coroutine to run it, since python root level is synchronous:
+    >>> async def arun():
+    ...     print(await ainc(41))
+    ...     for e in ainc.eventlog.values():
+    ...         print(e)
+    >>> asyncio.run(arun())  # doctest: +ELLIPSIS
+    42
+    CommandCalled(timestamp=datetime.datetime(...), bound_args=frozenset({('a', 41)}))
+    CommandReturned(timestamp=datetime.datetime(...), result=Ok(42))
 
 
-        Note : attempting to split the call/return couple seems to lead to a different, more functional,
-         more elementary/low-level design, which doesn't seem to be a good fit for python.
-        It is not suitable in our case, especially since this aims to be used as often as possible...
-        Therefore we accumulated a bunch of code in here, also with code related to time and synchronization.
+    This works as well for async generator:
+    This wraps a python async definition in an async generator, timing call and return.
+    >>> import asyncio
+    >>> async def inc(a: int):
+    ...     await asyncio.sleep(1)
+    ...     yield a+1
+    ...     yield a+2
+    ...     yield a+3
 
-        Note : Using a class to implement the decorator doesnt seem to fit our usecase,
-        as we want "as pythonic as possible" usage to not trip up the user of @generator.
-        We aim to be as general as possible, hence both unbound and bound functions and methods are supported here.
-        """
+    >>> ainc = eventful()(inc)
+
+    >>> print(ainc)  # doctest: +ELLIPSIS
+    <function inc at 0x...>
+
+    Here we need an coroutine to run it, since python root level is synchronous:
+    >>> async def arun():
+    ...     async for e in ainc(41):
+    ...         await asyncio.sleep(1)
+    ...         print(e)
+    ...     for e in ainc.eventlog.values():
+    ...         print(e)
+    >>> asyncio.run(arun())  # doctest: +ELLIPSIS
+    42
+    43
+    44
+    CommandCalled(timestamp=datetime.datetime(...), bound_args=frozenset({('a', 41)}))
+    CommandReturned(timestamp=datetime.datetime(...), result=Ok(42))
+    CommandReturned(timestamp=datetime.datetime(...), result=Ok(43))
+    CommandReturned(timestamp=datetime.datetime(...), result=Ok(44))
+
+    Ref : https://docs.python.org/3/reference/expressions.html#asynchronous-generator-functions
 
 
+    Note : attempting to split the call/return couple seems to lead to a different, more functional,
+     more elementary/low-level design, which doesn't seem to be a good fit for python.
+    It is not suitable in our case, especially since this aims to be used as often as possible...
+    Therefore we accumulated a bunch of code in here, also with code related to time and synchronization.
+
+    Note : Using a class to implement the decorator doesnt seem to fit our usecase,
+    as we want "as pythonic as possible" usage to not trip up the user of @generator.
+    We aim to be as general as possible, hence both unbound and bound functions and methods are supported here.
+    """
+
+    # TODO
+    _eventlog = OrderedDict() # if log is None else log
 
     _last = timer()
     # Setting last as now, to prevent accidental bursts on creation.
@@ -249,8 +209,6 @@ def eventful(#TODO : pass event store in decorator.
 
     def decorator(wrapped):
         nonlocal sleeper
-
-        _eventlog = OrderedDict()
 
         @wrapt.decorator
         async def async_eventful_generator(wrapped, instance, args, kwargs):
@@ -353,7 +311,7 @@ def eventful(#TODO : pass event store in decorator.
                 res = wrapped(*bound_args.args, **bound_args.kwargs)
 
                 _eventlog[call_event.timestamp] = call_event
-                yield call_event  # yielding after the call !
+                # yield call_event  # yielding after the call !
 
                 # Note this execution flow is linear (one or more result).
                 for e in res:
@@ -456,66 +414,66 @@ def eventful(#TODO : pass event store in decorator.
 
 
 
-# if __name__ == '__main__':
-#     import doctest
-#     doctest.testmod()
-
-
 if __name__ == '__main__':
-
-    @eventful()
-    def function():
-        return 42
+    import doctest
+    doctest.testmod()
 
 
-    @eventful()
-    def generator():
-        yield 42
-        yield 43
-        yield 44
-
-
-    @eventful()
-    async def async_function():
-        await asyncio.sleep(1)
-        return 42
-
-
-    @eventful()
-    async def async_generator():
-        await asyncio.sleep(1)
-        yield 42
-        await asyncio.sleep(1)
-        yield 43
-        await asyncio.sleep(1)
-        yield 44
-
-
-    print("function")
-    print(function())
-    for e in function.eventlog.values():
-        print(e)
-
-    print("generator")
-    for r in generator():
-        print(r)
-
-    for e in generator.eventlog.values():
-        print(e)
-
-    async def async_runtime():
-        print("async function")
-        print(await async_function())
-
-        for e in function.eventlog.values():
-            print(e)
-
-        print("async generator")
-        async for r in async_generator():
-            print(r)
-
-        for e in async_generator.eventlog.values():
-            print(e)
-
-    asyncio.run(async_runtime())
+# if __name__ == '__main__':
+#
+#     @eventful()
+#     def function():
+#         return 42
+#
+#
+#     @eventful()
+#     def generator():
+#         yield 42
+#         yield 43
+#         yield 44
+#
+#
+#     @eventful()
+#     async def async_function():
+#         await asyncio.sleep(1)
+#         return 42
+#
+#
+#     @eventful()
+#     async def async_generator():
+#         await asyncio.sleep(1)
+#         yield 42
+#         await asyncio.sleep(1)
+#         yield 43
+#         await asyncio.sleep(1)
+#         yield 44
+#
+#
+#     print("function")
+#     print(function())
+#     for e in function.eventlog.values():
+#         print(e)
+#
+#     print("generator")
+#     for r in generator():
+#         print(r)
+#
+#     for e in generator.eventlog.values():
+#         print(e)
+#
+#     async def async_runtime():
+#         print("async function")
+#         print(await async_function())
+#
+#         for e in function.eventlog.values():
+#             print(e)
+#
+#         print("async generator")
+#         async for r in async_generator():
+#             print(r)
+#
+#         for e in async_generator.eventlog.values():
+#             print(e)
+#
+#     asyncio.run(async_runtime())
 
