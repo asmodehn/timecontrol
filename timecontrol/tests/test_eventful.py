@@ -1,12 +1,11 @@
+from timecontrol.eventful import eventful, CommandCalled, CommandReturned
 import inspect
 import unittest
 
 import aiounittest
 
-from timecontrol.eventful import eventful, CommandCalled, CommandReturned
-
-# TODO : test command called
-# TODO : test command returned
+# TODO : test command called event
+# TODO : test command returned event
 
 
 class TestEventful(aiounittest.AsyncTestCase):
@@ -61,6 +60,10 @@ class TestEventful(aiounittest.AsyncTestCase):
             next(lc_one)
 
         assert si.exception  # TODO : test exception details
+
+    # TODO : test static method
+
+    # TODO : test classmethod ref : https://wrapt.readthedocs.io/en/latest/wrappers.html#function-wrappers
 
     def test_eventful_pydef_ratelimit(self):
         lc = eventful(ratelimit=3, timer=self.timer, sleeper=self.sleeper)(self.cmdimpl)
@@ -159,27 +162,51 @@ class TestEventful(aiounittest.AsyncTestCase):
     #     raise NotImplementedError
 
     def test_eventful_pyclass(self):
-        # TODO : a callable class must behave like a simple pydef on __call__
-        #  Event should not mix with init/delete
-        #  it would be the job of a higher-level eventful "concept" to do so,
-        #  by wrapping the init in a pydef for example...
+        class_init = False
+        class MyTstKls:
+            def __init__(self, *input, **extra):
+                nonlocal class_init
+                class_init = True
 
+        lc = eventful(timer=self.timer, sleeper=self.sleeper)(MyTstKls)
+
+        assert class_init == False
+
+        # Instantiating it and getting call event
+        lc_one = lc(1, "2", "etc")
+        assert inspect.isgenerator(lc_one)
+        # next() returns the event of the call itself.
+        assert isinstance(next(lc_one), CommandCalled)
+        assert class_init == True
+
+        # next() then triggers, and returns the result event...
+        ret = next(lc_one)
+        assert isinstance(ret, CommandReturned)
+        assert ret.result and isinstance(ret.result.value, MyTstKls)
+        assert class_init == True
+
+        # next() then doesnt work any longer
+        with self.assertRaises(StopIteration) as si:
+            next(lc_one)
+
+        assert si.exception  # TODO : test exception details
+
+    def test_eventful_pymeth(self):
         cmd_call = False
         class MyTstKls:
             def __init__(self, res):
                 self.res = res
 
+            @eventful(timer=self.timer, sleeper=self.sleeper)
             def __call__(self, *args, **kwargs):
                 nonlocal cmd_call
                 cmd_call = True
                 return self.res
 
-        LK = eventful(timer=self.timer, sleeper=self.sleeper)(MyTstKls)
-
         assert cmd_call == False
 
         # Instantiating it
-        lc = LK(42)
+        lc = MyTstKls(42)
 
         # calling and getting call event
         lc_one = lc(1, "2", "etc")
@@ -199,7 +226,6 @@ class TestEventful(aiounittest.AsyncTestCase):
             next(lc_one)
 
         assert si.exception  # TODO : test exception details
-
 
 # TODO : ASYNC test !
 # class TestAsyncEventful(TestEventful):
