@@ -1,6 +1,7 @@
 import unittest
 from datetime import datetime, timedelta, MINYEAR, MAXYEAR
 
+import typing
 from hypothesis import given
 from hypothesis import infer
 from hypothesis.strategies import data, timedeltas, datetimes
@@ -10,7 +11,8 @@ from timecontrol.timeinterval import TimeInterval
 
 class TestTimeInterval(unittest.TestCase):
 
-    def assert_all(self, t1: TimeInterval, t2: TimeInterval, after: bool = False, before: bool = False, meets: bool = False,
+    def assert_all(self, t1: typing.Union[datetime,TimeInterval], t2: typing.Union[datetime, TimeInterval],
+                   after: bool = False, before: bool = False, meets: bool = False,
                    overlaps: bool = False, during: bool = False, starts: bool = False, equal: bool = False,
                    finishes: bool = False):
         # before/after
@@ -42,6 +44,18 @@ class TestTimeInterval(unittest.TestCase):
 
         assert ti1 < ti2 and ti2 > ti1
         self.assert_all(ti1, ti2, before=True)
+
+    @given(dt1=infer, data=data())
+    def test_interval_before_datetime(self, dt1:datetime, data):
+
+        # generating other datetimes, preventing equality
+        dt2 = data.draw(datetimes(min_value=dt1 + timedelta(microseconds=1)))
+        dt3 = data.draw(datetimes(min_value=dt2 + timedelta(microseconds=1)))
+
+        ti1 = TimeInterval(start=dt1, stop=dt2)
+
+        assert ti1 < dt3 and dt3 > ti1
+        self.assert_all(ti1, dt3, before=True)
 
     @given(dt1=infer, data=data())
     def test_interval_after(self, dt1:datetime, data):
@@ -130,6 +144,9 @@ class TestTimeInterval(unittest.TestCase):
 
 
 class TestTimeIntervalFactory(unittest.TestCase):
+
+    def test_invertedbounds(self):
+        raise NotImplementedError
 
     def test_start(self):
         raise NotImplementedError

@@ -39,6 +39,10 @@ class TimeInterval:
         return self.start + (self.stop - self.start) / 2
 
     def __init__(self, start: datetime = None, stop: datetime = None):
+        if start > stop:  # invert if needed to keep usual interval semantics
+            self.start = stop
+        else:
+            self.stop = start
         self.start = start
         self.stop = stop
 
@@ -51,6 +55,9 @@ class TimeInterval:
     # Allen's Interval Algebra: https://en.wikipedia.org/wiki/Allen%27s_interval_algebra
     def __eq__(self, other: TimeInterval):
         return self.start == other.start and self.stop == other.stop
+
+    def __hash__(self):
+        return hash((self.start, self.stop))
 
     def after(self, other: TimeInterval):
         return self.start > other.stop
@@ -112,7 +119,8 @@ def timeinterval(start: datetime = None, stop: datetime=None) -> TimeInterval:
     if start is None:
         start = datetime.now()
     if stop is None:
-        stop = datetime(year=MAXYEAR, month=12, day=31)
+        stop = start + timedelta(microseconds=1)  # specific semantics of datetime as interval, looking ahead
+        # stop = datetime(year=MAXYEAR, month=12, day=31)
         # stop = datetime(year=MINYEAR, month=1, day=1)
 
     return TimeInterval(start=start, stop=stop)
