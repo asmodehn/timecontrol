@@ -1,21 +1,6 @@
 from __future__ import annotations
-from datetime import datetime, timedelta, MAXYEAR, MINYEAR
-from enum import Enum
 
 import typing
-
-from collections import namedtuple
-from typing import TypeVar
-
-# For now : specific time span:
-
-week = timedelta(weeks=1)
-day = timedelta(days=1)
-hour = timedelta(hours=1)
-minute = timedelta(minutes=1)
-second = timedelta(seconds=1)
-millisecond = timedelta(milliseconds=1)
-microsecond = timedelta(microseconds=1)
 
 
 class CountInterval:
@@ -168,7 +153,7 @@ def countinterval(start: int = None, stop: int=None) -> CountInterval:
     """
     # sensible defaults
     if start is None:
-        start = datetime.now()
+        start = 0
     if stop is None:
         stop = start   # specific semantics of interval as int
 
