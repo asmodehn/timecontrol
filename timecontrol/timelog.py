@@ -114,11 +114,13 @@ class TimeLog(Mapping):
 
         self._l[ti] = 0  # we need to initialize the accumulator/CRDT...
 
-        while self.timer_ns() in ti:
+        now = self.timer_ns()
+        while ti.starts_inv(now) or now in ti:  # CAREFUL : END OF TIMEFRAME IS EXCLUDED : start of next timeframe
             new_v = yield ti, self._l[ti]
             if new_v is not None:
                 self._l[ti] = self._l[ti] + new_v  # disordered accumulation semantics...
-
+            # updating now before looping
+            now = self.timer_ns()
         return
 
     # async def __aiter__(self):  # extract future ( blocking )
@@ -163,9 +165,6 @@ def timelog(mapping: typing.Mapping, timer_ns = time.time_ns, timeframe_ns = 1):
 
 
 if __name__ == '__main__':
-    import hypothesis.strategies as st
-    from timecontrol.tests.strats.st_timeinterval import st_timeinterval
-
     # building intervals for testing
     dt1 = time.time_ns()
     time.sleep(1)
@@ -183,7 +182,7 @@ if __name__ == '__main__':
     val = [2, 1]
 
     # example timelog
-    tl = timelog(mapping={t: i for t, i in zip(til, val)}, timeframe_ns=1000_000_000)
+    tl = timelog(mapping={t: i for t, i in zip(til, val)}, timeframe_ns=3000_000_000)
 
     for t, e in tl:
         print(f"{t} : {e}")
@@ -196,7 +195,9 @@ if __name__ == '__main__':
     try:
         print()
         print(acc.send(42))
-        time.sleep(3)
+        time.sleep(2)
+        print(acc.send(42))
+        time.sleep(2)
         print(acc.send(42))
     except StopIteration as si:
         print(f"{curti} ended already.")

@@ -55,7 +55,50 @@ class TestTimeLog(aiounittest.AsyncTestCase):
         assert tlb == tl == tlb  # verifying commutativity of equality
 
     def test_call_comonad(self):
-        raise NotImplementedError
+        # TODO : actual properties to test here ?
+        # a drivable clock for testing
+        test_clock = 0
+
+        def clock():
+            return test_clock
+
+        tl = timelog(mapping=dict(), timer_ns = clock, timeframe_ns=10)
+
+        # test comonadic that we can iterate on it towards the future
+        # extract M a -> a
+
+        acc = tl()
+
+        # starting generator
+        curti, initv = acc.send(None)
+        assert initv == 0
+        assert curti.start == test_clock and curti.stop == test_clock + tl.timeframe_ns
+
+        curti1, initv1 = acc.send(42)
+        assert curti == curti1
+        assert initv1 == 42
+
+        test_clock += 5
+
+        curti2, initv2 = acc.send(42)
+        assert curti == curti2 == curti1
+        assert initv2 == 84
+
+        test_clock += 6  # going over the timeframe
+
+        with self.assertRaises(StopIteration) as exc_ctx:
+            acc.send(51)
+
+        assert exc_ctx.exception
+
+        # keep going
+        acc_again = tl()
+
+        # starting generator
+        curti_again, initv_again = acc_again.send(None)
+        assert initv_again == 0
+        assert curti_again.start == test_clock and curti_again.stop == test_clock + tl.timeframe_ns
+
 
     # we do not depend on hypothesis here, as this can be quite complex and take some time
     # def test_aiter_comonad(self):
