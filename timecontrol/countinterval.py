@@ -5,15 +5,17 @@ import typing
 
 class CountInterval:
     """
-    A time interval is a couple of timedate (timedelta is deduced).
+    A count interval is a couple of counts.
 
     We rely on this representation to base everything on interval (for simple yet safe real-world correspondance)
     a time delta is considered an idea, an abstraction. we want to remain imperative / practical
     and keep the code directly related to the real world, python style, for easy maintenance.
     """
 
-    start: int
-    stop: int
+    start: int  # This is a counter : can only increase : start < stop and start is "certain"/"consensus agreed"
+    stop: int  # This is a counter : can only increase : start < stop
+               #  and stop is a notion of "maximum possible" -> uncertain
+    # => monotonic
 
     @property
     def delta(self) -> int:
@@ -73,12 +75,12 @@ class CountInterval:
 
     def meets(self, other: typing.Union[int, CountInterval]):
         if isinstance(other, int):
-            return other - self.stop == 1  # next in iteration
+            return other == self.stop
         return self.stop == other.start
 
     def meets_inv(self, other: typing.Union[int, CountInterval]):
         if isinstance(other, int):
-            return self.start - other == 1  # previous in iteration
+            return self.start == other
         return self.start == other.stop
 
     def overlaps(self, other: typing.Union[int, CountInterval]):

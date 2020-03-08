@@ -34,11 +34,11 @@ class TestCountInterval(unittest.TestCase):
         if isinstance(t1, CountInterval):
             assert meets == t1.meets(t2), f"{t1} meets {t2}"
         else:
-            assert meets == (t2-t1 == 1), f"{t2} - {t1} == 1"
+            assert meets == (t1 == t2.start), f"{t1} == {t2.start} bound of {t2}"
         if isinstance(t2, CountInterval):
             assert meets == t2.meets_inv(t1), f"{t2} meets_inv {t1}"
         else:
-            assert meets == (t1-t2 == -1), f"{t1} - {t2} == 1"
+            assert meets == (t2 == t1.stop), f"{t2} == {t1.stop} bound of {t1}"
 
         # overlaps
         if isinstance(t1, CountInterval):
@@ -127,6 +127,18 @@ class TestCountInterval(unittest.TestCase):
         self.assert_all(ti1, ti2, after=True)
 
     @given(dt1=infer, data=data())
+    def test_interval_after_int(self, dt1:int, data):
+
+        # generating other datetimes, preventing equality
+        dt2 = data.draw(integers(min_value=dt1 + 1))
+        dt3 = data.draw(integers(min_value=dt2 + 1))
+
+        ti1 = CountInterval(start=dt2, stop=dt3)
+
+        assert ti1 > dt1 and dt1 < ti1
+        self.assert_all(ti1, dt1, after=True)
+
+    @given(dt1=infer, data=data())
     def test_interval_meets(self, dt1: int, data):
 
         # generating other datetimes, preventing equality
@@ -139,6 +151,17 @@ class TestCountInterval(unittest.TestCase):
         self.assert_all(ti1, ti2, meets=True)
 
     @given(dt1=infer, data=data())
+    def test_interval_meets_int(self, dt1: int, data):
+
+        # generating other datetimes, preventing equality
+        dt2 = data.draw(integers(min_value=dt1 + 1))
+
+        ti1 = CountInterval(start=dt1, stop=dt2)
+
+        self.assert_all(ti1, dt2, meets=True)
+        self.assert_all(dt1, ti1, meets=True, starts=True)  # starts and meets are same for int
+
+    @given(dt1=infer, data=data())
     def test_interval_overlaps(self, dt1: int, data):
         # generating other datetimes, preventing equality
         dt2 = data.draw(integers(min_value=dt1 + 1))
@@ -149,6 +172,18 @@ class TestCountInterval(unittest.TestCase):
         ti2 = CountInterval(start=dt2, stop=dt4)
 
         self.assert_all(ti1, ti2, overlaps=True)
+
+    # @given(dt1=infer, data=data()) # TODO
+    # def test_interval_overlaps_int(self, dt1: int, data):
+    #     # generating other datetimes, preventing equality
+    #     dt2 = data.draw(integers(min_value=dt1 + 1))
+    #     dt3 = data.draw(integers(min_value=dt2 + 1))
+    #     dt4 = data.draw(integers(min_value=dt3 + 1))
+    #
+    #     ti1 = CountInterval(start=dt1, stop=dt3)
+    #     ti2 = CountInterval(start=dt2, stop=dt4)
+    #
+    #     self.assert_all(ti1, ti2, overlaps=True)
 
     @given(dt1=infer, data=data())
     def test_interval_during(self, dt1: int, data):
@@ -163,6 +198,21 @@ class TestCountInterval(unittest.TestCase):
         assert ti1 in ti2
         self.assert_all(ti1, ti2, during=True)
 
+
+    # @given(dt1=infer, data=data())  # TODO
+    # def test_interval_during_int(self, dt1: int, data):
+    #     # generating other datetimes, preventing equality
+    #     dt2 = data.draw(integers(min_value=dt1 + 1))
+    #     dt3 = data.draw(integers(min_value=dt2 + 1))
+    #     dt4 = data.draw(integers(min_value=dt3 + 1))
+    #
+    #     ti1 = CountInterval(start=dt2, stop=dt3)
+    #     ti2 = CountInterval(start=dt1, stop=dt4)
+    #
+    #     assert ti1 in ti2
+    #     self.assert_all(ti1, ti2, during=True)
+
+
     @given(dt1=infer, data=data())
     def test_interval_starts(self, dt1: int, data):
         # generating other datetimes, preventing equality
@@ -173,6 +223,19 @@ class TestCountInterval(unittest.TestCase):
         ti2 = CountInterval(start=dt1, stop=dt3)
 
         self.assert_all(ti1, ti2, starts=True)
+
+
+    # @given(dt1=infer, data=data())  # TODO
+    # def test_interval_starts_int(self, dt1: int, data):
+    #     # generating other datetimes, preventing equality
+    #     dt2 = data.draw(integers(min_value=dt1 + 1))
+    #     dt3 = data.draw(integers(min_value=dt2 + 1))
+    #
+    #     ti1 = CountInterval(start=dt1, stop=dt2)
+    #     ti2 = CountInterval(start=dt1, stop=dt3)
+    #
+    #     self.assert_all(ti1, ti2, starts=True)
+    #
 
     @given(dt1=infer, data=data())
     def test_interval_finishes(self, dt1: int, data):
@@ -185,6 +248,17 @@ class TestCountInterval(unittest.TestCase):
 
         self.assert_all(ti1, ti2, finishes=True)
 
+    # @given(dt1=infer, data=data())  # TODO
+    # def test_interval_finishes_int(self, dt1: int, data):
+    #     # generating other datetimes, preventing equality
+    #     dt2 = data.draw(integers(min_value=dt1 + 1))
+    #     dt3 = data.draw(integers(min_value=dt2 + 1))
+    #
+    #     ti1 = CountInterval(start=dt2, stop=dt3)
+    #     ti2 = CountInterval(start=dt1, stop=dt3)
+    #
+    #     self.assert_all(ti1, ti2, finishes=True)
+
     @given(dt1=infer, data=data())
     def test_interval_equals(self, dt1: int, data):
         # generating other datetimes, preventing equality
@@ -195,6 +269,17 @@ class TestCountInterval(unittest.TestCase):
 
         assert ti1 == ti2
         self.assert_all(ti1, ti2, equal=True)
+
+    # @given(dt1=infer, data=data())  # TODO
+    # def test_interval_equals_int(self, dt1: int, data):
+    #     # generating other datetimes, preventing equality
+    #     dt2 = data.draw(integers(min_value=dt1 + 1))
+    #
+    #     ti1 = CountInterval(start=dt1, stop=dt2)
+    #     ti2 = CountInterval(start=dt1, stop=dt2)
+    #
+    #     assert ti1 == ti2
+    #     self.assert_all(ti1, ti2, equal=True)
 
 
 class TestCountIntervalFactory(unittest.TestCase):
