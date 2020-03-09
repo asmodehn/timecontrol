@@ -27,7 +27,7 @@ class EventCounter(MutableMapping):
     low: Counter
     # leveraging counter collection instead of dict of interval as values
 
-    def __init__(self, low = None, high = None):
+    def __init__(self, low:Counter = None, high:Counter = None):
         if high is None and low is None:
             self.high = Counter()
             self.low = Counter()
@@ -40,6 +40,23 @@ class EventCounter(MutableMapping):
         else:
             self.high = high
             self.low = low
+
+    def __call__(self, e:Event):
+        """
+        An event certified observed.
+        :param e:
+        :return:
+        """
+        self.low[e] +=1
+        self.high[e] +=1
+
+        return self
+
+    def __repr__(self):
+        reprstr = f"EventCounter<"
+        for e in self.low.keys():
+            reprstr += f"{e} : [{self.low[e]}..{self.high[e]}], "
+        return reprstr
 
     def __getitem__(self, item):
         return countinterval(self.low[item], self.high[item])
@@ -77,8 +94,13 @@ class EventCounter(MutableMapping):
     # TODO Counter API with interval semantics for content
 
     def __add__(self, other):
+        """ adds counter together.
+        """
         return EventCounter(low= self.low + other.low, high=self.high + other.high)
 
+    # def __and__(self, other):
+    #     """"""
+    #     return EventCounter(low=self.low & other.low)
 
 if __name__ == '__main__':
     pass

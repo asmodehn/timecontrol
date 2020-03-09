@@ -14,6 +14,41 @@ from datetime import datetime, timezone, timedelta
 
 from timecontrol.timeinterval import TimeInterval, timeinterval, timep
 
+class DistAgg:
+    agg: int
+
+    def __init__(self):
+        self.agg = 0
+
+    def __int__(self):
+        return self.agg
+
+    def __repr__(self):
+        return repr(self.agg)
+
+    def __str__(self):
+        return str(self.agg)
+
+    def __eq__(self, other: typing.Union[int, DistAgg]):
+        if isinstance(other,int):
+            return self.agg == other
+        else:
+            return self.agg == other.agg
+
+    def __lt__(self, other: typing.Union[int, DistAgg]):
+        if isinstance(other, int):
+            return self.agg < other
+        else:
+            return self.agg < other.agg
+
+    def __call__(self, v=1):
+        # aggregating v. call order shouldnt matter !
+        self.agg += v
+
+    def merge(self, other):
+        # merging aggregators
+        self.agg = max ( self.agg, other.agg)
+
 
 # TODO : timezone wrapper to depend onlocation => datetimelog
 
@@ -23,14 +58,22 @@ class TimeLog(Mapping):
     We do not care here about values, that can be anything.
 
     Note: the keys could be sparsely distributed along the time axis...
+
+    This datastructure can be called to start a generator that will store values in the current timeinterval, until the end of timeframe.
+    The __call__() behaves like a bimonad into the future, where the iterator is a comonad into the (immutable) past.
+    As a consequence, there is no notion of order inside a timeframe. => we need a CRDT-like data as value.
+
     """
-    def __init__(self, mapping: typing.MutableMapping,
+    def __init__(self, mapping: typing.MutableMapping, inner_type=DistAgg,
                  timer_ns: typing.Callable[[], int] = time.time_ns, timeframe_ns: int = 1):
+        # TODO : maybe the timer could be also an event loop timer for async code...
         # INTERNAL Time measurement (for in/out sync only)
         self.timer_ns = timer_ns
         self.timeframe_ns = timeframe_ns
 
-        self._l = mapping
+        self._inner_type = inner_type
+
+        self._l = OrderedDict(mapping)  # we need to enforce "some" ordering of the mapping, even if not present at first...
         self._wait = OrderedDict()  #  a dict of events, by timedate (timelog as well ??)
 
     @property
@@ -112,13 +155,13 @@ class TimeLog(Mapping):
                 ti = k
                 break
 
-        self._l[ti] = 0  # we need to initialize the accumulator/CRDT...
+        self._l[ti] = self._inner_type()  # we need to initialize the accumulator/CRDT...
 
         now = self.timer_ns()
         while ti.starts_inv(now) or now in ti:  # CAREFUL : END OF TIMEFRAME IS EXCLUDED : start of next timeframe
             new_v = yield ti, self._l[ti]
             if new_v is not None:
-                self._l[ti] = self._l[ti] + new_v  # disordered accumulation semantics...
+                self._l[ti](new_v)  # disordered accumulation semantics...
             # updating now before looping
             now = self.timer_ns()
         return
@@ -184,9 +227,11 @@ if __name__ == '__main__':
     # example timelog
     tl = timelog(mapping={t: i for t, i in zip(til, val)}, timeframe_ns=3000_000_000)
 
+    # backward
     for t, e in tl:
         print(f"{t} : {e}")
 
+    # forward
     extracted = []
 
     acc = tl()
