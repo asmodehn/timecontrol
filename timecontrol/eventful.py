@@ -18,7 +18,7 @@ import wrapt
 import functools
 
 from timecontrol.events import CommandCalled, CommandReturned, CommandReturnedLate
-
+from timecontrol.eventstore import EventStore, eventstore
 
 TimePeriod = typing.Union[timedelta, int]
 TimePoint = typing.Union[datetime, int]
@@ -39,7 +39,10 @@ def default_async_sleeper(delay: TimePeriod):
                       delay)
 
 
-def eventful(# TODO pass log:  = None,
+def eventful(
+        # need a generator which consumes events... (can aggregate them, transmit them, etc.)
+        event_eradicator: typing.Optional[EventStore] = None,
+
         #: https://en.wikipedia.org/wiki/Rate_limiting
         # But this is expressed in time units (minimal guaranteed "no-call" period)
         ratelimit: typing.Optional[TimePeriod] = None,
@@ -61,10 +64,9 @@ def eventful(# TODO pass log:  = None,
     <function inc at 0x...>
     >>> einc(41)
     42
-    >>> for e in einc.eventlog.values():
+    >>> for ti, e in einc.eventlog:
     ...    print(e)  # doctest: +ELLIPSIS
-    CommandCalled(timestamp=datetime.datetime(...), bound_args=frozenset({('a', 41)}))
-    CommandReturned(timestamp=datetime.datetime(...), result=Ok(42))
+    EventCounter<CommandCalled(bound_args=frozenset({('a', 41)})): 1, CommandReturned(result=Ok(42)): 1>
 
     Note it works as well for generators, wrapping yielded values in events:
     This wraps a python generator definition in another generator, timing values yielded.
@@ -83,12 +85,9 @@ def eventful(# TODO pass log:  = None,
     42
     43
     44
-    >>> for e in einc.eventlog.values():
+    >>> for ti, e in einc.eventlog:
     ...    print(e)  # doctest: +ELLIPSIS
-    CommandCalled(timestamp=datetime.datetime(...), bound_args=frozenset({('a', 41)}))
-    CommandReturned(timestamp=datetime.datetime(...), result=Ok(42))
-    CommandReturned(timestamp=datetime.datetime(...), result=Ok(43))
-    CommandReturned(timestamp=datetime.datetime(...), result=Ok(44))
+    EventCounter<CommandCalled(bound_args=frozenset({('a', 41)})): 1, CommandReturned(result=Ok(42)): 1, CommandReturned(result=Ok(43)): 1, CommandReturned(result=Ok(44)): 1>
 
     https://docs.python.org/3/reference/expressions.html#yield-expressions
 
@@ -107,12 +106,12 @@ def eventful(# TODO pass log:  = None,
     Here we need an coroutine to run it, since python root level is synchronous:
     >>> async def arun():
     ...     print(await ainc(41))
-    ...     for e in ainc.eventlog.values():
+    ...     for ti, e in ainc.eventlog:
     ...         print(e)
     >>> asyncio.run(arun())  # doctest: +ELLIPSIS
     42
-    CommandCalled(timestamp=datetime.datetime(...), bound_args=frozenset({('a', 41)}))
-    CommandReturned(timestamp=datetime.datetime(...), result=Ok(42))
+    EventCounter<>
+    EventCounter<CommandCalled(bound_args=frozenset({('a', 41)})): 1, CommandReturned(result=Ok(42)): 1>
 
 
     This works as well for async generator:
@@ -134,16 +133,18 @@ def eventful(# TODO pass log:  = None,
     ...     async for e in ainc(41):
     ...         await asyncio.sleep(1)
     ...         print(e)
-    ...     for e in ainc.eventlog.values():
+    ...     for ti, e in ainc.eventlog:
     ...         print(e)
     >>> asyncio.run(arun())  # doctest: +ELLIPSIS
     42
     43
     44
-    CommandCalled(timestamp=datetime.datetime(...), bound_args=frozenset({('a', 41)}))
-    CommandReturned(timestamp=datetime.datetime(...), result=Ok(42))
-    CommandReturned(timestamp=datetime.datetime(...), result=Ok(43))
-    CommandReturned(timestamp=datetime.datetime(...), result=Ok(44))
+    EventCounter<>
+    EventCounter<CommandReturned(result=Ok(44)): 1>
+    EventCounter<CommandReturned(result=Ok(43)): 1>
+    EventCounter<CommandCalled(bound_args=frozenset({('a', 41)})): 1, CommandReturned(result=Ok(42)): 1>
+
+    The last empty event counter is there for the current time frame, and hasnt been discarded just yet...
 
     Ref : https://docs.python.org/3/reference/expressions.html#asynchronous-generator-functions
 
@@ -158,8 +159,7 @@ def eventful(# TODO pass log:  = None,
     We aim to be as general as possible, hence both unbound and bound functions and methods are supported here.
     """
 
-    # TODO
-    _eventlog = OrderedDict() # if log is None else log
+    _eventlog = eventstore() if event_eradicator is None else event_eradicator
 
     _last = timer()
     # Setting last as now, to prevent accidental bursts on creation.
@@ -168,9 +168,9 @@ def eventful(# TODO pass log:  = None,
     # Setting last as long time ago, to force speedup on creation.
 
     def _call_event(bound_args: inspect.BoundArguments) -> typing.Union[CommandCalled, timedelta]:
-
+        # TODO : remove rate limiter from here, user can use the calllimiter decorator...
         nonlocal _last
-
+        # TODO : before cleaning this up, we need to test it thoroughly...
         if ratelimit:
             # Measure time
             now = timer()
@@ -184,7 +184,7 @@ def eventful(# TODO pass log:  = None,
                 _last = now
 
         # We have to duplicate bound arguments here, since that type is not serializable...
-        return CommandCalled(timestamp=timer(), bound_arguments=bound_args)
+        return CommandCalled(bound_arguments=bound_args)
 
     def _result_event(e) -> CommandReturned:
 
@@ -197,17 +197,17 @@ def eventful(# TODO pass log:  = None,
         if timeframe and inner_now - _inner_last > timeframe:
             # Call too slow
             # Log exception (we cannot do anything locally - it is up to the scheduler who scheduled us)
-            ret = CommandReturnedLate(result=result, timestamp_bound=_inner_last + timeframe,
-                                      timestamp=timer())
+            # => maybe useless here ?
+            ret = CommandReturnedLate(result=result)
         else:
-            ret = CommandReturned(result=result, timestamp=timer())
+            ret = CommandReturned(result=result)
 
         # need to do that after the > period check !
         _inner_last = inner_now
 
         return ret
 
-    def decorator(wrapped):
+    def decorator(wrapper):
         nonlocal sleeper
 
         @wrapt.decorator
@@ -217,18 +217,22 @@ def eventful(# TODO pass log:  = None,
             _sleeper = default_async_sleeper if sleeper is None else sleeper
 
             if instance is not None and not hasattr(instance, "eventlog"):
-                # then the log should be here (but only assign the first time
-                instance.eventlog = _eventlog
+                instance.eventlog = dict()
+                # then the log should be here (but only assign the first time)
+                if wrapped.__name__ not in instance.eventlog:
+                    instance.eventlog[wrapped.__name__] = _eventlog
 
             sig = inspect.signature(wrapped)
             # checking arguments binding early
             bound_args = sig.bind(*args, **kwargs)
             bound_args.apply_defaults()
 
-            call_event = _call_event(bound_args=bound_args)
-            _eventlog[call_event.timestamp] = call_event
+            event_logger = _eventlog()
+            event_logger.send(None)  # note we ignore hte current timeframe and starting counter
 
-            # yield call_event
+            # Storing event in log
+            call_event = _call_event(bound_args=bound_args)
+            event_logger.send(call_event)
 
             try:
                 res = wrapped(*bound_args.args, **bound_args.kwargs)
@@ -239,7 +243,7 @@ def eventful(# TODO pass log:  = None,
                     # should not access resources "out of system border".
                     # In this case everything is supposedly "internal" (ie in python interpreter process).
                     res_evt = _result_event(e)
-                    _eventlog[res_evt.timestamp] = res_evt
+                    event_logger.send(res_evt)  # storing event in log
                     yield e
                     # Note: this internally can return result with a "late" result type.
                     # This is a signal for an external system to do something (nothing can be done in here)
@@ -247,8 +251,8 @@ def eventful(# TODO pass log:  = None,
 
             except Exception as exc:
                 result = Result.Err(exc)
-                res_evt = CommandReturned(result=result, timestamp=timer())
-                _eventlog[res_evt.timestamp] = res_evt
+                res_evt = CommandReturned(result=result)
+                event_logger.send(res_evt)  # storing event in log
                 raise  # to propagate any unexpected exception (the usual expected behavior)
 
         @wrapt.decorator
@@ -258,16 +262,22 @@ def eventful(# TODO pass log:  = None,
             _sleeper = default_async_sleeper if sleeper is None else sleeper
 
             if instance is not None and not hasattr(instance, "eventlog"):
-                # then the log should be here (but only assign the first time
-                instance.eventlog = _eventlog
+                instance.eventlog = dict()
+                # then the log should be here (but only assign the first time)
+                if wrapped.__name__ not in instance.eventlog:
+                    instance.eventlog[wrapped.__name__] = _eventlog
 
             sig = inspect.signature(wrapped)
             # checking arguments binding early
             bound_args = sig.bind(*args, **kwargs)
             bound_args.apply_defaults()
 
+            event_logger = _eventlog()
+            event_logger.send(None)  # note we ignore hte current timeframe and starting counter
+
             call_event = _call_event(bound_args=bound_args)
-            _eventlog[call_event.timestamp] = call_event
+            # TODO : handle rate limitation !
+            event_logger.send(call_event)  # storing event in log
 
             # yield call_event
 
@@ -277,13 +287,13 @@ def eventful(# TODO pass log:  = None,
                 # Note this execution flow is affine (zero or at most one result) but with python exception handling,
                 #  we attempt make it exactly one (useful to get determinism for "in-system" usecases)
                 res_evt = _result_event(res)
-                _eventlog[res_evt.timestamp] = res_evt
+                event_logger.send(res_evt)  # storing event in log
                 return res
 
             except Exception as exc:
                 result = Result.Err(exc)
-                res_evt = CommandReturned(result=result, timestamp=timer())
-                _eventlog[res_evt.timestamp] = res_evt
+                res_evt = CommandReturned(result=result)
+                event_logger.send(res_evt)  # storing event in log
                 raise  # to propagate any unexpected exception (the usual expected behavior)
 
         @wrapt.decorator
@@ -293,13 +303,18 @@ def eventful(# TODO pass log:  = None,
             _sleeper = default_sync_sleeper if sleeper is None else sleeper
 
             if instance is not None and not hasattr(instance, "eventlog"):
+                instance.eventlog = dict()
                 # then the log should be here (but only assign the first time)
-                instance.eventlog = _eventlog
+                if wrapped.__name__ not in instance.eventlog:
+                    instance.eventlog[wrapped.__name__] = _eventlog
 
             sig = inspect.signature(wrapped)
             # checking arguments binding early
             bound_args = sig.bind(*args, **kwargs)
             bound_args.apply_defaults()
+
+            event_logger = _eventlog()
+            event_logger.send(None)  # note we ignore hte current timeframe and starting counter
 
             call_event = _call_event(bound_args=bound_args)
 
@@ -310,7 +325,7 @@ def eventful(# TODO pass log:  = None,
             try:
                 res = wrapped(*bound_args.args, **bound_args.kwargs)
 
-                _eventlog[call_event.timestamp] = call_event
+                event_logger.send(call_event) # storing event in log
                 # yield call_event  # yielding after the call !
 
                 # Note this execution flow is linear (one or more result).
@@ -319,15 +334,15 @@ def eventful(# TODO pass log:  = None,
                     # should not access resources "out of system border".
                     # In this case everything is supposedly "internal" (ie in python interpreter process).
                     res_evt = _result_event(e)
-                    _eventlog[res_evt.timestamp] = res_evt
+                    event_logger.send(res_evt)  # storing event in log
                     yield e
                     # Note: this internally can return result with a "late" result type.
                     # This is a signal for an external system to do something (nothing can be done in here)
                 return
             except Exception as exc:
                 result = Result.Err(exc)
-                res_evt = CommandReturned(result=result, timestamp=timer())
-                _eventlog[res_evt.timestamp] = res_evt
+                res_evt = CommandReturned(result=result)
+                event_logger.send(res_evt)  # storing event in log
                 raise  # to propagate any unexpected exception (the usual expected behavior)
 
         @wrapt.decorator
@@ -336,14 +351,23 @@ def eventful(# TODO pass log:  = None,
             # This is here only to allow dependency injection for testing
             _sleeper = default_sync_sleeper if sleeper is None else sleeper
 
-            if instance is not None and not hasattr(instance, "eventlog"):
-                # then the log should be here (but only assign the first time
-                instance.eventlog = _eventlog
+
+            if inspect.ismethod(wrapped):
+                if instance is None:  # class method:
+                    pass
+                elif not hasattr(instance, "eventlog"):  # usual instance method
+                    instance.eventlog = dict()
+                    # then the log should be here (but only assign the first time)
+                    if wrapped.__name__ not in instance.eventlog:
+                        instance.eventlog[wrapped.__name__] = _eventlog
 
             sig = inspect.signature(wrapped)
             # checking arguments binding early
             bound_args = sig.bind(*args, **kwargs)
             bound_args.apply_defaults()
+
+            event_logger = _eventlog()
+            event_logger.send(None)  # note we ignore hte current timeframe and starting counter
 
             call_event = _call_event(bound_args=bound_args)
 
@@ -354,45 +378,44 @@ def eventful(# TODO pass log:  = None,
             try:
                 res = wrapped(*bound_args.args, **bound_args.kwargs)
 
-                _eventlog[call_event.timestamp] = call_event
+                event_logger.send(call_event)  # storing event in log
 
                 # Note this execution flow is affine (zero or at most one result) but with python exception handling,
                 #  we attempt make it exactly one (useful to get determinism for "in-system" usecases)
                 res_evt = _result_event(res)
-                _eventlog[res_evt.timestamp] = res_evt
+                event_logger.send(res_evt)  # storing event in log
                 return res
 
             except Exception as exc:
                 result = Result.Err(exc)
-                res_evt = CommandReturned(result=result, timestamp=timer())
-                _eventlog[res_evt.timestamp] = res_evt
+                res_evt = CommandReturned(result=result)
+                event_logger.send(res_evt)  # storing event in log
                 raise  # to propagate any unexpected exception (the usual expected behavior)
 
-
-        if inspect.isclass(wrapped):
+        if inspect.isclass(wrapper):
             #TODO : store log in the meta class ???
-            wrap = eventful_function(wrapped)  # wrapping the init of the class
+            wrap = eventful_function(wrapper)  # wrapping the init of the class
             # the log will be set on the instance on the first call (cannot be on the class)
 
         # checking for async first, to avoid too much if-nesting
-        elif inspect.isasyncgenfunction(wrapped):  # for some reason asyncgen is not a coroutine... (py3.7)
-            wrap = async_eventful_generator(wrapped)
+        elif inspect.isasyncgenfunction(wrapper):  # for some reason asyncgen is not a coroutine... (py3.7)
+            wrap = async_eventful_generator(wrapper)
 
-        elif inspect.iscoroutinefunction(wrapped):
-            wrap = async_eventful_function(wrapped)
+        elif inspect.iscoroutinefunction(wrapper):
+            wrap = async_eventful_function(wrapper)
 
         # then the more general case
-        elif inspect.isfunction(wrapped):
-            if inspect.isgeneratorfunction(wrapped):
-                wrap = eventful_generator(wrapped)
+        elif inspect.isfunction(wrapper) or inspect.ismethod(wrapper):
+            if inspect.isgeneratorfunction(wrapper):
+                wrap = eventful_generator(wrapper)
             else:
-                wrap = eventful_function(wrapped)
+                wrap = eventful_function(wrapper)
 
         # did we forget any usecase ?
         else:
-            raise NotImplementedError(f"eventful doesnt support decorating {wrapped}")
+            raise NotImplementedError(f"eventful doesnt support decorating {wrapper}")
 
-        if not inspect.ismethod(wrapped):
+        if not inspect.ismethod(wrapper):
             wrap.eventlog = _eventlog
         # else the log will be set on the instance on the first call (cannot be on the method)
 
@@ -416,7 +439,7 @@ def eventful(# TODO pass log:  = None,
 
 if __name__ == '__main__':
     import doctest
-    doctest.testmod()
+    doctest.testmod(verbose=True)
 
 
 # if __name__ == '__main__':

@@ -1,3 +1,5 @@
+import asyncio
+
 from timecontrol.eventful import eventful, CommandCalled, CommandReturned
 import inspect
 import unittest
@@ -6,6 +8,7 @@ import aiounittest
 
 # TODO : test command called event
 # TODO : test command returned event
+from timecontrol.eventstore import EventStore
 
 
 class TestEventful(aiounittest.AsyncTestCase):
@@ -29,137 +32,191 @@ class TestEventful(aiounittest.AsyncTestCase):
         yield 2
         return
 
+    @classmethod
+    def class_cmdimpl(cls, *input, **extra):
+        # ignoring input : constant function
+        return 42
+
+    @classmethod
+    def class_genimpl(cls, *input, **extra):
+        # ignoring input : deterministic generator
+        yield 51
+        yield 42
+        return
+
+    @staticmethod
+    def static_cmdimpl(*input, **extra):
+        # ignoring input : constant function
+        return 42  # hardcoded return
+
+    @staticmethod
+    def statis_genimpl(*input, **extra):
+        # ignoring input : deterministic generator
+        yield 42
+        yield 51
+        return
+
+
+
+
+    class EventSink(list):  # just a callable list storing whatever is passed to it.
+
+        def __call__(self):
+            while True:
+                e = yield
+                self.append(e)
+
     def setUp(self) -> None:
         self.clock = 0
         self.slept = 0
         self.result = 42
+        self.events = list()
+        # as far as the decorator is concerned, events are ordered (as per python semantics)
 
         self.command_call = False
         self.generator_call = False
 
     def test_eventful_pydef(self):
-        lc = eventful(timer=self.timer, sleeper=self.sleeper)(self.cmdimpl)
+        sink = TestEventful.EventSink()  # careful class must be initialized here. we need to pass a callable
+        lc = eventful(event_eradicator=sink, timer=self.timer, sleeper=self.sleeper)(self.cmdimpl)
 
         assert self.command_call == False
 
-        # calling and getting call event
+        # calling as usual
         lc_one = lc(1, "2", "etc")
-        assert inspect.isgenerator(lc_one)
-        # next() returns the event of the call itself.
-        assert isinstance(next(lc_one), CommandCalled)
+        assert lc_one == 42
+
         assert self.command_call == True
 
-        # next() then triggers, and returns the result event...
-        ret = next(lc_one)
-        assert isinstance(ret, CommandReturned)
-        assert ret.result and ret.result.value == 42
-        assert self.command_call == True
+        # log has been attached to the current class
+        assert hasattr(self, "eventlog")
+        assert self.cmdimpl.__name__ == lc.__name__  # wrapt is taking care of this
+        assert self.cmdimpl.__name__ in self.eventlog
 
-        # next() then doesnt work any longer
-        with self.assertRaises(StopIteration) as si:
-            next(lc_one)
+        # retrieving callevent in the log
+        assert isinstance(self.eventlog[lc.__name__], TestEventful.EventSink)
+        assert len(self.eventlog[lc.__name__]) == 2  # 2 events expected
 
-        assert si.exception  # TODO : test exception details
+        # return
+        re = self.eventlog[lc.__name__][-1]
+        assert isinstance(re, CommandReturned)
+        assert re.result and re.result.value == 42
 
-    # TODO : test static method
+        # call
+        ce = self.eventlog[lc.__name__][-2]
+        assert isinstance(ce, CommandCalled)
+        assert ("input", (1, "2", "etc")) in ce.bound_args
 
-    # TODO : test classmethod ref : https://wrapt.readthedocs.io/en/latest/wrappers.html#function-wrappers
+    # test static method (same as normal function)
+    def test_eventful_pydef_static(self):
+        sink = TestEventful.EventSink()  # careful class must be initialized here. we need to pass a callable
+        lc = eventful(event_eradicator=sink, timer=self.timer, sleeper=self.sleeper)(self.static_cmdimpl)
 
-    def test_eventful_pydef_ratelimit(self):
-        lc = eventful(ratelimit=3, timer=self.timer, sleeper=self.sleeper)(self.cmdimpl)
-
-        assert self.command_call == False
-
-        # calling and getting first event
+        # calling as usual
         lc_one = lc(1, "2", "etc")
-        assert inspect.isgenerator(lc_one)
-        assert self.slept == 0
-        # next() returns the event of the call itself.
-        assert isinstance(next(lc_one), CommandCalled)
-        # after a bit of sleeping and calling
-        assert self.slept == 3
-        assert self.command_call == True
+        assert lc_one == 42
 
-        # next() then returns the result event...
-        ret = next(lc_one)
-        assert isinstance(ret, CommandReturned)
-        assert ret.result and ret.result.value == 42
-        assert self.slept == 3
-        assert self.command_call == True
+        # log has been attached to the static function (like for a normal function
+        assert hasattr(self.static_cmdimpl, "eventlog")
 
-        # reset
-        self.command_call = False
-        self.slept = 0
+        # retrieving callevent in the log
+        assert isinstance(self.static_cmdimpl.eventlog, TestEventful.EventSink)
+        assert len(self.static_cmdimpl.eventlog) == 2  # 2 events expected
 
-        # calling again
-        lc_two = lc(3, "4", "more")
-        assert inspect.isgenerator(lc_two)
-        assert self.slept == 0
-        # next() returns the event of the call itself.
-        assert isinstance(next(lc_two), CommandCalled)
-        # after a bit of sleeping and calling
-        assert self.slept == 3
-        assert self.command_call == True
+        # return
+        re = self.static_cmdimpl.eventlog[-1]
+        assert isinstance(re, CommandReturned)
+        assert re.result and re.result.value == 42
 
-        # reset
-        self.slept = 0
-        self.command_call = False
-        # increasing clock of more than a period
-        self.clock += 4
-        # next call will not sleep
+        # call
+        ce = self.static_cmdimpl.eventlog[-2]
+        assert isinstance(ce, CommandCalled)
+        assert ("input", (1, "2", "etc")) in ce.bound_args
 
-        lc_three = lc(5, "6", "and more")
-        assert inspect.isgenerator(lc_three)
-        assert self.slept == 0
-        # next() returns the event of the call itself.
-        assert isinstance(next(lc_three), CommandCalled)
-        # and calling without sleeping
-        assert self.slept == 0
-        assert self.command_call == True
+    def test_eventful_pydef_class(self):
+        sink = TestEventful.EventSink()  # careful class must be initialized here. we need to pass a callable
+        lc = eventful(event_eradicator=sink, timer=self.timer, sleeper=self.sleeper)(TestEventful.class_cmdimpl)
 
-    # TODO
-    # def test_eventful_pydef_ratelimit_timeframe(self):
-    #     raise NotImplementedError
+        # calling as usual
+        lc_one = lc(1, "2", "etc")
+        assert lc_one == 42
+
+        # log has been attached to the current class
+        assert hasattr(self, "eventlog")
+        assert self.cmdimpl.__name__ == lc.__name__  # wrapt is taking care of this
+        assert self.cmdimpl.__name__ in self.eventlog
+
+        # retrieving callevent in the log
+        assert isinstance(self.eventlog[lc.__name__], TestEventful.EventSink)
+        assert len(self.eventlog[lc.__name__]) == 2  # 2 events expected
+
+        # return
+        re = self.eventlog[lc.__name__][-1]
+        assert isinstance(re, CommandReturned)
+        assert re.result and re.result.value == 42
+
+        # call
+        ce = self.eventlog[lc.__name__][-2]
+        assert isinstance(ce, CommandCalled)
+        assert ("input", (1, "2", "etc")) in ce.bound_args
+
 
     def test_eventful_pygen(self):
-        lc = eventful(timer=self.timer, sleeper=self.sleeper)(self.genimpl)
+        sink = TestEventful.EventSink()  # careful class must be initialized here. we need to pass a callable
+        lc = eventful(event_eradicator=sink, timer=self.timer, sleeper=self.sleeper)(self.genimpl)
 
         assert self.generator_call == False
 
         # calling and getting call event
         lc_one = lc(1, "2", "etc")
         assert inspect.isgenerator(lc_one)
-        # next() returns the event of the call itself.
-        assert isinstance(next(lc_one), CommandCalled)
         # CAREFUL HERE ! GENERATOR HAS NOT BEEN actually CALLED UNTIL NEXT() !
-        # This is in line with python semantics... but different from usual pydef for our events !
+        # This is in line with python semantics...
         assert self.generator_call == False
 
-        # next() then triggers, and returns the result event...
+        # THEREFORE log is not created just yet
+
+        # next() then triggers, and returns the result...
         ret = next(lc_one)
-        assert isinstance(ret, CommandReturned)
-        assert ret.result and ret.result.value == 1
+        assert ret == 1
         assert self.generator_call == True
 
-        # next() then triggers, and returns the result event...
+        # log has been attached to the current class
+        assert hasattr(self, "eventlog")
+        assert self.genimpl.__name__ == lc.__name__  # wrapt is taking care of this
+        assert self.genimpl.__name__ in self.eventlog
+
+        # retrieving callevent and returnevent in the log
+        assert isinstance(self.eventlog[lc.__name__], TestEventful.EventSink)
+        assert len(self.eventlog[lc.__name__]) == 2  # 2 events expected
+
+        # call
+        ce = self.eventlog[lc.__name__][-2]
+        assert isinstance(ce, CommandCalled)
+        assert ("input", (1, "2", "etc")) in ce.bound_args
+
+        # return
+        re = self.eventlog[lc.__name__][-1]
+        assert isinstance(re, CommandReturned)
+        assert re.result and re.result.value == 1
+
+        # next() then triggers, and returns the result...
         ret = next(lc_one)
-        assert isinstance(ret, CommandReturned)
-        assert ret.result and ret.result.value == 2
+        assert ret == 2
         assert self.generator_call == True
+
+        # retrieving another rturnevent in the log
+        assert isinstance(self.eventlog[lc.__name__], TestEventful.EventSink)
+        assert len(self.eventlog[lc.__name__]) == 3  # 3 events expected
+
+        # another return
+        re = self.eventlog[lc.__name__][-1]
+        assert isinstance(re, CommandReturned)
+        assert re.result and re.result.value == 2
 
         # next() then doesnt work any longer
         with self.assertRaises(StopIteration) as si:
             next(lc_one)
-
-        assert si.exception  # TODO : test exception details
-
-    # TODO
-    # def test_eventful_pygen_ratelimit(self):
-    #     raise NotImplementedError
-
-    # TODO
-    # def test_eventful_pygen_ratelimit_timeframe(self):
-    #     raise NotImplementedError
 
     def test_eventful_pyclass(self):
         class_init = False
@@ -168,64 +225,37 @@ class TestEventful(aiounittest.AsyncTestCase):
                 nonlocal class_init
                 class_init = True
 
-        lc = eventful(timer=self.timer, sleeper=self.sleeper)(MyTstKls)
+        sink = TestEventful.EventSink()  # careful class must be initialized here. we need to pass a callable
+        lc = eventful(event_eradicator=sink, timer=self.timer, sleeper=self.sleeper)(MyTstKls)
 
         assert class_init == False
 
-        # Instantiating it and getting call event
+        # Instantiating it as usual
         lc_one = lc(1, "2", "etc")
-        assert inspect.isgenerator(lc_one)
-        # next() returns the event of the call itself.
-        assert isinstance(next(lc_one), CommandCalled)
+        assert isinstance(lc_one, MyTstKls)
+
         assert class_init == True
 
-        # next() then triggers, and returns the result event...
-        ret = next(lc_one)
-        assert isinstance(ret, CommandReturned)
-        assert ret.result and isinstance(ret.result.value, MyTstKls)
-        assert class_init == True
+        # log has been attached to the class itself !
+        assert hasattr(MyTstKls, "eventlog")
+        assert MyTstKls.__name__ == lc.__name__  # wrapt is taking care of this
+        # note we dont need multiple logs here (like for methods), class definition should be unique.
 
-        # next() then doesnt work any longer
-        with self.assertRaises(StopIteration) as si:
-            next(lc_one)
+        # retrieving callevent in the log
+        assert isinstance(MyTstKls.eventlog, TestEventful.EventSink)
+        assert len(MyTstKls.eventlog) == 2  # 2 events expected
 
-        assert si.exception  # TODO : test exception details
+        # return
+        re = MyTstKls.eventlog[-1]
+        assert isinstance(re, CommandReturned)
+        assert re.result and re.result.value == lc_one
 
-    def test_eventful_pymeth(self):
-        cmd_call = False
-        class MyTstKls:
-            def __init__(self, res):
-                self.res = res
+        # call
+        ce = MyTstKls.eventlog[-2]
+        assert isinstance(ce, CommandCalled)
+        assert ("input", (1, "2", "etc")) in ce.bound_args
 
-            @eventful(timer=self.timer, sleeper=self.sleeper)
-            def __call__(self, *args, **kwargs):
-                nonlocal cmd_call
-                cmd_call = True
-                return self.res
 
-        assert cmd_call == False
-
-        # Instantiating it
-        lc = MyTstKls(42)
-
-        # calling and getting call event
-        lc_one = lc(1, "2", "etc")
-        assert inspect.isgenerator(lc_one)
-        # next() returns the event of the call itself.
-        assert isinstance(next(lc_one), CommandCalled)
-        assert cmd_call == True
-
-        # next() then triggers, and returns the result event...
-        ret = next(lc_one)
-        assert isinstance(ret, CommandReturned)
-        assert ret.result and ret.result.value == 42
-        assert cmd_call == True
-
-        # next() then doesnt work any longer
-        with self.assertRaises(StopIteration) as si:
-            next(lc_one)
-
-        assert si.exception  # TODO : test exception details
 
 # TODO : ASYNC test !
 # class TestAsyncEventful(TestEventful):
