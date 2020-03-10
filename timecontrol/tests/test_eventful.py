@@ -12,13 +12,6 @@ from timecontrol.eventstore import EventStore
 
 
 class TestEventful(aiounittest.AsyncTestCase):
-    def timer(self):
-        return self.clock
-
-    def sleeper(self, slept):
-        self.slept = slept
-        # Note : to avoid blocking the sleep needs to directly modify the clock here
-        self.clock += slept
 
     def cmdimpl(self, *input, **extra):
         # ignoring input : constant function
@@ -57,7 +50,7 @@ class TestEventful(aiounittest.AsyncTestCase):
         return
 
 
-
+    # TODO : Test with more complex data (dict, not hashable, etc)
 
     class EventSink(list):  # just a callable list storing whatever is passed to it.
 
@@ -78,7 +71,7 @@ class TestEventful(aiounittest.AsyncTestCase):
 
     def test_eventful_pydef(self):
         sink = TestEventful.EventSink()  # careful class must be initialized here. we need to pass a callable
-        lc = eventful(event_eradicator=sink, timer=self.timer, sleeper=self.sleeper)(self.cmdimpl)
+        lc = eventful(event_eradicator=sink)(self.cmdimpl)
 
         assert self.command_call == False
 
@@ -110,7 +103,7 @@ class TestEventful(aiounittest.AsyncTestCase):
     # test static method (same as normal function)
     def test_eventful_pydef_static(self):
         sink = TestEventful.EventSink()  # careful class must be initialized here. we need to pass a callable
-        lc = eventful(event_eradicator=sink, timer=self.timer, sleeper=self.sleeper)(self.static_cmdimpl)
+        lc = eventful(event_eradicator=sink)(self.static_cmdimpl)
 
         # calling as usual
         lc_one = lc(1, "2", "etc")
@@ -133,37 +126,38 @@ class TestEventful(aiounittest.AsyncTestCase):
         assert isinstance(ce, CommandCalled)
         assert ("input", (1, "2", "etc")) in ce.bound_args
 
-    def test_eventful_pydef_class(self):
-        sink = TestEventful.EventSink()  # careful class must be initialized here. we need to pass a callable
-        lc = eventful(event_eradicator=sink, timer=self.timer, sleeper=self.sleeper)(TestEventful.class_cmdimpl)
-
-        # calling as usual
-        lc_one = lc(1, "2", "etc")
-        assert lc_one == 42
-
-        # log has been attached to the current class
-        assert hasattr(self, "eventlog")
-        assert self.cmdimpl.__name__ == lc.__name__  # wrapt is taking care of this
-        assert self.cmdimpl.__name__ in self.eventlog
-
-        # retrieving callevent in the log
-        assert isinstance(self.eventlog[lc.__name__], TestEventful.EventSink)
-        assert len(self.eventlog[lc.__name__]) == 2  # 2 events expected
-
-        # return
-        re = self.eventlog[lc.__name__][-1]
-        assert isinstance(re, CommandReturned)
-        assert re.result and re.result.value == 42
-
-        # call
-        ce = self.eventlog[lc.__name__][-2]
-        assert isinstance(ce, CommandCalled)
-        assert ("input", (1, "2", "etc")) in ce.bound_args
+    # TODO : see https://github.com/GrahamDumpleton/wrapt/issues/155
+    # def test_eventful_pydef_class(self):
+    #     sink = TestEventful.EventSink()  # careful class must be initialized here. we need to pass a callable
+    #     lc = eventful(event_eradicator=sink)(TestEventful.class_cmdimpl)
+    #
+    #     # calling as usual
+    #     lc_one = lc(1, "2", "etc")
+    #     assert lc_one == 42
+    #
+    #     # log has been attached to the current class
+    #     assert hasattr(self, "eventlog")
+    #     assert self.cmdimpl.__name__ == lc.__name__  # wrapt is taking care of this
+    #     assert self.cmdimpl.__name__ in self.eventlog
+    #
+    #     # retrieving callevent in the log
+    #     assert isinstance(self.eventlog[lc.__name__], TestEventful.EventSink)
+    #     assert len(self.eventlog[lc.__name__]) == 2  # 2 events expected
+    #
+    #     # return
+    #     re = self.eventlog[lc.__name__][-1]
+    #     assert isinstance(re, CommandReturned)
+    #     assert re.result and re.result.value == 42
+    #
+    #     # call
+    #     ce = self.eventlog[lc.__name__][-2]
+    #     assert isinstance(ce, CommandCalled)
+    #     assert ("input", (1, "2", "etc")) in ce.bound_args
 
 
     def test_eventful_pygen(self):
         sink = TestEventful.EventSink()  # careful class must be initialized here. we need to pass a callable
-        lc = eventful(event_eradicator=sink, timer=self.timer, sleeper=self.sleeper)(self.genimpl)
+        lc = eventful(event_eradicator=sink)(self.genimpl)
 
         assert self.generator_call == False
 
@@ -226,7 +220,7 @@ class TestEventful(aiounittest.AsyncTestCase):
                 class_init = True
 
         sink = TestEventful.EventSink()  # careful class must be initialized here. we need to pass a callable
-        lc = eventful(event_eradicator=sink, timer=self.timer, sleeper=self.sleeper)(MyTstKls)
+        lc = eventful(event_eradicator=sink)(MyTstKls)
 
         assert class_init == False
 

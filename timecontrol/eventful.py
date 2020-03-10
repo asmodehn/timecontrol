@@ -9,7 +9,7 @@ from result import Result
 # TODO : different kinds of !structured! log / dataframes, etc.
 
 import asyncio
-from collections import OrderedDict
+from collections import OrderedDict, Hashable
 from datetime import datetime, MINYEAR, timedelta
 import inspect
 
@@ -17,26 +17,26 @@ import typing
 import wrapt
 import functools
 
-from timecontrol.events import CommandCalled, CommandReturned, CommandReturnedLate
+from timecontrol.events import CommandCalled, CommandReturned, CommandReturnedLate, frozendict
 from timecontrol.eventstore import EventStore, eventstore
 
 TimePeriod = typing.Union[timedelta, int]
 TimePoint = typing.Union[datetime, int]
 
 
-def default_sync_sleeper(delay: TimePeriod):
-    if isinstance(delay, timedelta):
-        time.sleep(delay.seconds)
-    else:
-        time.sleep(delay)
-
-
-def default_async_sleeper(delay: TimePeriod):
-    if isinstance(delay, timedelta):
-        asyncio.sleep(delay=delay.seconds)
-    else:
-        asyncio.sleep(delay=
-                      delay)
+# def default_sync_sleeper(delay: TimePeriod):
+#     if isinstance(delay, timedelta):
+#         time.sleep(delay.seconds)
+#     else:
+#         time.sleep(delay)
+#
+#
+# def default_async_sleeper(delay: TimePeriod):
+#     if isinstance(delay, timedelta):
+#         asyncio.sleep(delay=delay.seconds)
+#     else:
+#         asyncio.sleep(delay=
+#                       delay)
 
 
 def eventful(
@@ -45,13 +45,14 @@ def eventful(
 
         #: https://en.wikipedia.org/wiki/Rate_limiting
         # But this is expressed in time units (minimal guaranteed "no-call" period)
-        ratelimit: typing.Optional[TimePeriod] = None,
+        # ratelimit: typing.Optional[TimePeriod] = None,
 
         #: https://en.wikipedia.org/wiki/Temporal_resolution
-        timeframe: typing.Optional[TimePeriod] = None,
+        # timeframe: typing.Optional[TimePeriod] = None,
 
-        timer: typing.Callable[[], TimePoint] = datetime.now,
-        sleeper: typing.Callable[[TimePeriod], None]=None):
+        #timer: typing.Callable[[], TimePoint] = datetime.now,
+        #sleeper: typing.Callable[[TimePeriod], None]=None
+        ):
     """
     An Eventful Generator.
     This wraps a python pydef definition into a generator of events
@@ -161,60 +162,67 @@ def eventful(
 
     _eventlog = eventstore() if event_eradicator is None else event_eradicator
 
-    _last = timer()
-    # Setting last as now, to prevent accidental bursts on creation.
-
-    _inner_last = datetime(year=MINYEAR, month=1, day=1)
+    # _last = timer()
+    # # Setting last as now, to prevent accidental bursts on creation.
+    #
+    # _inner_last = datetime(year=MINYEAR, month=1, day=1)
     # Setting last as long time ago, to force speedup on creation.
 
     def _call_event(bound_args: inspect.BoundArguments) -> typing.Union[CommandCalled, timedelta]:
         # TODO : remove rate limiter from here, user can use the calllimiter decorator...
-        nonlocal _last
+        # nonlocal _last
         # TODO : before cleaning this up, we need to test it thoroughly...
-        if ratelimit:
-            # Measure time
-            now = timer()
-
-            # sleep if needed (this can be addressed locally)
-            if now - _last < ratelimit:
-                # Call too fast.
-                # sleeps expected time period - already elapsed time
-                return ratelimit - (now - _last)
-            else:
-                _last = now
+        # if ratelimit:
+        #     # Measure time
+        #     now = timer()
+        #
+        #     # sleep if needed (this can be addressed locally)
+        #     if now - _last < ratelimit:
+        #         # Call too fast.
+        #         # sleeps expected time period - already elapsed time
+        #         return ratelimit - (now - _last)
+        #     else:
+        #         _last = now
 
         # We have to duplicate bound arguments here, since that type is not serializable...
         return CommandCalled(bound_arguments=bound_args)
 
     def _result_event(e) -> CommandReturned:
 
-        nonlocal _inner_last
+        # nonlocal _inner_last
+        #
+        # # Measure time
+        # inner_now = timer()
 
-        # Measure time
-        inner_now = timer()
-
-        result = Result.Ok(e)
-        if timeframe and inner_now - _inner_last > timeframe:
-            # Call too slow
-            # Log exception (we cannot do anything locally - it is up to the scheduler who scheduled us)
-            # => maybe useless here ?
-            ret = CommandReturnedLate(result=result)
+        #CAREFUL HERE : order is important...
+        if isinstance(e, Hashable):  # same as checking for "__hash__" attribute...
+            result = Result.Ok(e)
+        elif isinstance(e, dict):
+            result = Result.Ok(frozendict(e))
         else:
-            ret = CommandReturned(result=result)
+            raise RuntimeError(f"{e} is not hashable")  # error early
+
+        # if timeframe and inner_now - _inner_last > timeframe:
+        #     # Call too slow
+        #     # Log exception (we cannot do anything locally - it is up to the scheduler who scheduled us)
+        #     # => maybe useless here ?
+        #     ret = CommandReturnedLate(result=result)
+        # else:
+        ret = CommandReturned(result=result)
 
         # need to do that after the > period check !
-        _inner_last = inner_now
+        # _inner_last = inner_now
 
         return ret
 
     def decorator(wrapper):
-        nonlocal sleeper
+        # nonlocal sleeper
 
         @wrapt.decorator
         async def async_eventful_generator(wrapped, instance, args, kwargs):
 
             # This is here only to allow dependency injection for testing
-            _sleeper = default_async_sleeper if sleeper is None else sleeper
+            # _sleeper = default_async_sleeper if sleeper is None else sleeper
 
             if instance is not None and not hasattr(instance, "eventlog"):
                 instance.eventlog = dict()
@@ -259,7 +267,7 @@ def eventful(
         async def async_eventful_function(wrapped, instance, args, kwargs):
 
             # This is here only to allow dependency injection for testing
-            _sleeper = default_async_sleeper if sleeper is None else sleeper
+            # _sleeper = default_async_sleeper if sleeper is None else sleeper
 
             if instance is not None and not hasattr(instance, "eventlog"):
                 instance.eventlog = dict()
@@ -300,7 +308,7 @@ def eventful(
         def eventful_generator(wrapped, instance, args, kwargs):
 
             # This is here only to allow dependency injection for testing
-            _sleeper = default_sync_sleeper if sleeper is None else sleeper
+            # _sleeper = default_sync_sleeper if sleeper is None else sleeper
 
             if instance is not None and not hasattr(instance, "eventlog"):
                 instance.eventlog = dict()
@@ -318,9 +326,9 @@ def eventful(
 
             call_event = _call_event(bound_args=bound_args)
 
-            while isinstance(call_event, (int, timedelta)):  # the intent is to sleep
-                _sleeper(call_event)
-                call_event = _call_event(bound_args=bound_args)
+            # while isinstance(call_event, (int, timedelta)):  # the intent is to sleep
+            #     _sleeper(call_event)
+            #     call_event = _call_event(bound_args=bound_args)
 
             try:
                 res = wrapped(*bound_args.args, **bound_args.kwargs)
@@ -349,8 +357,7 @@ def eventful(
         def eventful_function(wrapped, instance, args, kwargs):
 
             # This is here only to allow dependency injection for testing
-            _sleeper = default_sync_sleeper if sleeper is None else sleeper
-
+            # _sleeper = default_sync_sleeper if sleeper is None else sleeper
 
             if inspect.ismethod(wrapped):
                 if instance is None:  # class method:
@@ -371,9 +378,9 @@ def eventful(
 
             call_event = _call_event(bound_args=bound_args)
 
-            while isinstance(call_event, (int, timedelta)):  # the intent is to sleep
-                _sleeper(call_event)
-                call_event = _call_event(bound_args=bound_args)
+            # while isinstance(call_event, (int, timedelta)):  # the intent is to sleep
+            #     _sleeper(call_event)
+            #     call_event = _call_event(bound_args=bound_args)
 
             try:
                 res = wrapped(*bound_args.args, **bound_args.kwargs)
