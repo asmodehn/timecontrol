@@ -21,7 +21,7 @@ from timecontrol.events import CommandCalled, CommandReturned, CommandReturnedLa
 from timecontrol.eventstore import EventStore, eventstore
 
 TimePeriod = typing.Union[timedelta, int]
-TimePoint = typing.Union[datetime, int]
+TimePoint = typing.Union[datetime, int]  # how about float ? time.time() -> float
 
 
 # def default_sync_sleeper(delay: TimePeriod):
@@ -224,9 +224,10 @@ def eventful(
             # This is here only to allow dependency injection for testing
             # _sleeper = default_async_sleeper if sleeper is None else sleeper
 
-            if instance is not None and not hasattr(instance, "eventlog"):
-                instance.eventlog = dict()
-                # then the log should be here (but only assign the first time)
+            if instance is not None:
+                if not hasattr(instance, "eventlog"):
+                    instance.eventlog = dict()
+                # only assign the first time
                 if wrapped.__name__ not in instance.eventlog:
                     instance.eventlog[wrapped.__name__] = _eventlog
 
@@ -269,9 +270,10 @@ def eventful(
             # This is here only to allow dependency injection for testing
             # _sleeper = default_async_sleeper if sleeper is None else sleeper
 
-            if instance is not None and not hasattr(instance, "eventlog"):
-                instance.eventlog = dict()
-                # then the log should be here (but only assign the first time)
+            if instance is not None:
+                if not hasattr(instance, "eventlog"):
+                    instance.eventlog = dict()
+                # only assign the first time
                 if wrapped.__name__ not in instance.eventlog:
                     instance.eventlog[wrapped.__name__] = _eventlog
 
@@ -310,9 +312,10 @@ def eventful(
             # This is here only to allow dependency injection for testing
             # _sleeper = default_sync_sleeper if sleeper is None else sleeper
 
-            if instance is not None and not hasattr(instance, "eventlog"):
-                instance.eventlog = dict()
-                # then the log should be here (but only assign the first time)
+            if instance is not None:
+                if not hasattr(instance, "eventlog"):
+                    instance.eventlog = dict()
+                # only assign the first time
                 if wrapped.__name__ not in instance.eventlog:
                     instance.eventlog[wrapped.__name__] = _eventlog
 
@@ -360,11 +363,10 @@ def eventful(
             # _sleeper = default_sync_sleeper if sleeper is None else sleeper
 
             if inspect.ismethod(wrapped):
-                if instance is None:  # class method:
-                    pass
-                elif not hasattr(instance, "eventlog"):  # usual instance method
-                    instance.eventlog = dict()
-                    # then the log should be here (but only assign the first time)
+                if not instance is None:
+                    if not hasattr(instance, "eventlog"):  # usual instance method
+                        instance.eventlog = dict()
+                    # only assign the first time
                     if wrapped.__name__ not in instance.eventlog:
                         instance.eventlog[wrapped.__name__] = _eventlog
 
