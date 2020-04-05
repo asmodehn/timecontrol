@@ -1,5 +1,10 @@
+__pycache__
+.hypothesis
+
 /timecontrol.egg-info/
 /dist/
 /build/
 /.eggs/
 /Pipfile.lock
+/.mypy_cache
+/.idea
