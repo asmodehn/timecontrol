@@ -2,6 +2,7 @@ import inspect
 import time
 
 import typing
+
 import wrapt
 import asyncio
 from asyncio import AbstractEventLoop, Task
@@ -12,13 +13,20 @@ from asyncio import AbstractEventLoop, Task
 AgentTask = typing.Callable[[AbstractEventLoop], Task]
 
 
+_T = typing.TypeVar("_T")
+
+
 @wrapt.decorator
-def fun2coro(wrapped, instance, args, kwargs):
+def fun2coro(wrapped: typing.Callable[..., _T], instance, args, kwargs) -> typing.Coroutine[typing.Any, typing.Any, _T]:
     """ Simplest decorator to reliably turn a function into a coroutine.
     This makes it doable from the call site (instead of having to redefine it with async def)
     """
 
-    async def fun_wrapper(*args, **kwargs):
+    async def fun_wrapper(*args, **kwargs) -> _T:
+        return wrapped(*args, **kwargs)
+
+    # if coroutine we can forward the call already.
+    if inspect.iscoroutinefunction(wrapped) or inspect.isasyncgenfunction(wrapped):
         return wrapped(*args, **kwargs)
 
     return fun_wrapper(*args, **kwargs)
@@ -26,7 +34,7 @@ def fun2coro(wrapped, instance, args, kwargs):
 
 def delayed(delay=0, sleeper=asyncio.sleep):
     @wrapt.decorator
-    def decorator(wrapped, instance, args, kwargs):
+    def decorator(wrapped: typing.Callable[..., _T], instance, args, kwargs) -> typing.Coroutine[typing.Any, typing.Any, _T]:
         """ Simplest decorator to reliably delay a coroutine execution by a relative amount of time.
         This makes it doable from the call site (instead of having to add delay in the definition
         """
@@ -40,7 +48,57 @@ def delayed(delay=0, sleeper=asyncio.sleep):
     return decorator
 
 
-def agenttask(delay=0, sleeper=asyncio.sleep):
+def background(loop: AbstractEventLoop):
+    @wrapt.decorator
+    def decorator(wrapped: typing.Callable[..., _T], instance, args, kwargs) -> typing.Coroutine[typing.Any, typing.Any, _T]:
+        """ Simplest decorator to reliably trampoline a coroutine.
+        This makes it doable from the call site (instead of having to add trampoline in the definition.
+        BEWARE of infinite loops without sleeps !
+        """
+
+        async def trampoline_wrapper(*args, **kwargs):
+            return loop.create_task(wrapped(*args, **kwargs))
+
+        return trampoline_wrapper(*args, **kwargs)
+
+    return decorator
+
+
+def trampoline(loop: AbstractEventLoop):
+    @wrapt.decorator
+    def decorator(wrapped: typing.Callable[..., _T], instance, args, kwargs) -> typing.Coroutine[typing.Any, typing.Any, _T]:
+        """ Simplest decorator to reliably trampoline a coroutine.
+        This makes it doable from the call site (instead of having to add trampoline in the definition.
+        BEWARE of infinite loops without sleeps !
+        """
+
+        async def trampoline_wrapper(*args, **kwargs):
+            res = await wrapped(*args, **kwargs)
+            loop.create_task(wrapped(*args,**kwargs))
+            return res
+
+        return trampoline_wrapper(*args, **kwargs)
+
+    return decorator
+
+
+def traced(log: typing.MutableMapping):
+    @wrapt.decorator
+    def decorator(wrapped: typing.Callable[..., _T], instance, args, kwargs) -> typing.Coroutine[typing.Any, typing.Any, _T]:
+
+        async def traced_wrapper(*args, **kwargs):
+            sig = inspect.signature(wrapped)
+            bound_args = sig.bind(*args, **kwargs)
+            bound_args.apply_defaults()
+            log[bound_args] = await wrapped(*bound_args.args, **bound_args.kwargs)
+            return log[bound_args]
+
+        return traced_wrapper(*args, **kwargs)
+
+    return decorator
+
+
+def agenttask(delay=0.1, trampoline=False, sleeper=asyncio.sleep):
     """
     A decorator to delay the task creation until an eventloop is passed as argument.
     This will also wrap functions inside coroutines, to be executed only as part of an eventloop.
@@ -56,6 +114,19 @@ def agenttask(delay=0, sleeper=asyncio.sleep):
             # add a delay if needed *after* the call (to ensure a coro), but *before* the schedule.
             if delay:
                 wrapped = delayed(delay, sleeper=sleeper)(wrapped)
+
+            if trampoline:
+                wrapped = trampoline(wrapped)
+
+            def trampoline_with_loop(loop: AbstractEventLoop) -> Task:
+
+                async def trampoline_wrapper(*args, **kwargs) -> Task:
+                    res = await wrapped(*args, **kwargs)
+                    loop.create_task(trampoline_wrapper(*args, **kwargs))
+                    return res
+
+                # return a task to be executed soon
+                return loop.create_task(wrapped(*args, **kwargs))
 
             def with_loop(loop: AbstractEventLoop) -> Task:
                 # return a task to be executed soon
