@@ -32,27 +32,50 @@ def fun2coro(wrapped: typing.Callable[..., _T], instance, args, kwargs) -> typin
     return fun_wrapper(*args, **kwargs)
 
 
-def delayed(delay=0, sleeper=asyncio.sleep):
+def delayed(delay: float=0.0, sleeper: typing.Callable=asyncio.sleep):
     @wrapt.decorator
     def decorator(wrapped: typing.Callable[..., _T], instance, args, kwargs) -> typing.Coroutine[typing.Any, typing.Any, _T]:
         """ Simplest decorator to reliably delay a coroutine execution by a relative amount of time.
-        This makes it doable from the call site (instead of having to add delay in the definition
+        This makes it doable from the call site (instead of having to add delay in the definition).
+        It is also usable for a normal function, if a sleeper method is passed as argument.
         """
+        nonlocal sleeper
 
-        async def delayed_wrapper(*args, **kwargs):
+        async def delayed_async_wrapper(*args, **kwargs):
             await sleeper(delay=delay)
-            return await wrapped(*args, **kwargs)
+            if inspect.isasyncgenfunction(wrapped):  # a kind of special thing...
+                return wrapped(*args, **kwargs)
+            else:
+                return await wrapped(*args, **kwargs)
 
-        return delayed_wrapper(*args, **kwargs)
+        def delayed_wrapper(*args, **kwargs):
+            sleeper(delay=delay)
+            return wrapped(*args, **kwargs)
+
+        # if coroutine or asyncgen.
+        if inspect.iscoroutinefunction(wrapped) or inspect.isasyncgenfunction(wrapped):
+            # asserting the sleep is of same nature as the wrapped callable
+            # TODO : test this properly the sleeper to be async (async function OR async method)
+            # TODO : with types ?
+            return delayed_async_wrapper(*args, **kwargs)
+        else:
+            # asserting the sleep is of same nature as the wrapped callable
+            assert inspect.isfunction(sleeper) or inspect.ismethod(sleeper)  # TODO : test this properly with types ?
+            return delayed_wrapper(*args, **kwargs)
 
     return decorator
 
 
+# TODO : throttle, to sleep in between generator loop (before yielding)
+#  Behavior could be to fallback on delay for functions and coroutines...
+
+
+# TODO : maybe this one is not useful after all...
 def background(loop: AbstractEventLoop):
     @wrapt.decorator
     def decorator(wrapped: typing.Callable[..., _T], instance, args, kwargs) -> typing.Coroutine[typing.Any, typing.Any, _T]:
-        """ Simplest decorator to reliably trampoline a coroutine.
-        This makes it doable from the call site (instead of having to add trampoline in the definition.
+        """ Simplest decorator to reliably schedule a coroutine to run as a task of the loop
+        This makes it doable between the call site and the definition, when the loop is not accessible in other places.
         BEWARE of infinite loops without sleeps !
         """
 
@@ -64,17 +87,18 @@ def background(loop: AbstractEventLoop):
     return decorator
 
 
+# TODO : isnt this similar to a inifinite (async?) generator ?
 def trampoline(loop: AbstractEventLoop):
     @wrapt.decorator
     def decorator(wrapped: typing.Callable[..., _T], instance, args, kwargs) -> typing.Coroutine[typing.Any, typing.Any, _T]:
         """ Simplest decorator to reliably trampoline a coroutine.
-        This makes it doable from the call site (instead of having to add trampoline in the definition.
-        BEWARE of infinite loops without sleeps !
+        This makes it doable from the callsite (instead of having to add trampoline in the definition).
+        BEWARE of infinite background loops without sleeps !
         """
 
         async def trampoline_wrapper(*args, **kwargs):
-            res = await wrapped(*args, **kwargs)
-            loop.create_task(wrapped(*args,**kwargs))
+            res = await wrapped(*args, **kwargs)  # First result to init
+            loop.create_task(wrapped(*args, **kwargs))  # then background...
             return res
 
         return trampoline_wrapper(*args, **kwargs)
@@ -82,9 +106,12 @@ def trampoline(loop: AbstractEventLoop):
     return decorator
 
 
-def traced(log: typing.MutableMapping):
+def traced(log: typing.Dict[float, _T]):
     @wrapt.decorator
     def decorator(wrapped: typing.Callable[..., _T], instance, args, kwargs) -> typing.Coroutine[typing.Any, typing.Any, _T]:
+        """ Simplest decorator to reliably add a trace to a coroutine.
+        This makes it doable from the callsite (instead of having to add a trace in the definition).
+        """
 
         async def traced_wrapper(*args, **kwargs):
             sig = inspect.signature(wrapped)
