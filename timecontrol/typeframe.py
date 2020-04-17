@@ -1,95 +1,77 @@
-from __future__ import annotations
-from typing import Iterable, Tuple, Any, NamedTuple, Optional, Type, ClassVar
-
+from typing import NamedTupleMeta
 import static_frame as sf
 
 
-class TypeFrameBase:
-    """
-    Base class to represent a static frame as a bimonadic container representing a "Type" and its known elements
-    """
-    @staticmethod
-    def Void():
-        return TypeFrame("Void", column_types=[])
+class TypeFrameMeta(type):
 
-    frame: sf.FrameGO
+    def __new__(cls, typename, bases, ns):
+        if ns.get('_rootframe', False):
+            # The Special case of TypeFrame base class (also used as Empty type)
 
-    def __iter__(self):
-        """ linear interface (towards the old)"""
-        for e in reversed(self.frame):
-            yield e
+            # calling NamedTupleMeta to also process defaults values for this record type
+            ns['Record'] = NamedTupleMeta(typename=f"{typename}Record", bases=bases, ns={})
+
+            # creating empty typeframe and adding it to the type
+            ns['typeframe'] = sf.Frame.from_records(records=[], columns=[])
+            return super().__new__(cls, typename, bases, ns)
+
+        # calling NamedTupleMeta to also process defaults values for this record type
+        ns['Record'] = NamedTupleMeta(typename=f"{typename}Record", bases=bases, ns=ns)
+
+        # creating empty typeframe and adding it to the type
+        ns['typeframe'] = sf.Frame.from_records(records=[], columns=ns['Record']._fields, dtypes=ns['Record']._field_types)
+
+        def property_reindex(propname):
+            def reindexer(self):
+                return {k: sf.Frame.from_records(records=[r for r in self.typeframe.iter_tuple(1) if getattr(r, propname) == k])
+                        for k in set(getattr(e, propname) for e in self.typeframe.iter_tuple(1))}  # TODO : find a faster way...
+            return reindexer
+
+        for p in ns['typeframe'].columns:
+            # property of a class needs to be defined on the metaclass!
+            setattr(cls, p, property(property_reindex(propname=p)))
+
+        return super().__new__(cls, typename, bases, ns)
 
     def __len__(self):
-        return len(self.frame)
+        return len(self.typeframe)
 
 
-def TypeFrame(typename: str, column_types: Iterable[Tuple[str, Any]]):
+class TypeFrame(metaclass=TypeFrameMeta):
+    """
+
+    """
+    _rootframe = True
+
+    def __new__(cls, *args, **kwargs):
+        # calling the record type and returning it after storage
+        inst = cls.Record(*args, **kwargs)
+        records = [e for e in cls.typeframe.iter_tuple(1)]
+        cls.typeframe = sf.Frame.from_records(records=records + [inst])
+        return inst
 
 
-    struct = NamedTuple(typename=typename, fields=column_types)
-
-    if not column_types:
-        # Void usecase
-        def frame_init(self):
-            raise TypeError("No instance of this type can be constructed")
-
-        return type(typename, (TypeFrameBase,), {"__init__": frame_init})
-
-    def frame_init(self, *records: struct):
-        if records:
-            recs = [r for r in records if isinstance(r, struct)]  # type checking the record or dropping.
-            # TODO : log/raise if something is dropped...
-            self.frame = sf.FrameGO.from_records(records=recs)  # dtype supposedly guessed from records.
-        else:
-            self.frame = sf.FrameGO.from_records(records=[], columns=struct._fields, dtypes=struct._field_types)
-
-    def frame_getitem(self, item: NamedTuple):
-        return self.frame[item]
-
-    def filter_factory(propname):
-        def prop_filter(self):
-            return {  #  a mapping to pick a value for this property as a filter
-                v: frozenset(e for e in self.frame if getattr(e, propname) == v)
-                for v in [getattr(e, propname) for e in self.frame]
-            }
-
-    attribs = {
-        "Record": struct,
-        "__init__": frame_init,
-        "__getitem__": frame_getitem
-    }
-
-    # CAREFUL here : we need to have same behavioral interface as namedtuple...
-    props = {f: property(filter_factory(f)) for f in struct._fields}
-
-    frame = type(typename, (TypeFrameBase,), {**attribs, **props})
-
-    return frame
-
-# NoneTypeRecord = NamedTuple("NoneType",)
-# NoneInstance = NoneTypeRecord()
-# NoneTypeFrame = TypeFrame(records=[NoneInstance], record_type=NoneTypeRecord)
-
-
-# def typeframe(name: str, *, records: Optional[Iterable[Any]], record_type: Optional[NamedTuple] = None):
-#
-#     if not records:  # no records
-#         if record_type is None:
-#             return TypeFrame.Void()
-#         else:
-#             # although empty, we have some shape already
-#             tf = TypeFrame(record_type=record_type)
-#     else:
-#         tf = TypeFrame(records=records)
-#     return tf
-
-
-
-
-
-
+class MyType(TypeFrame, metaclass=TypeFrameMeta):
+    _rootframe = False
+    # Note the cardinality is implicit here (could be added as parameter for TypeFrameMeta)
+    col1: int
+    col2: int
 
 
 if __name__ == '__main__':
 
-    TypeFrame("MyType", fields=[("nickname", str)])
+    print(MyType.Record)
+    print(MyType.typeframe)
+
+    mt = MyType(42, 56)
+    print([e for e in MyType.typeframe.iter_tuple(1)])
+    print(MyType.col1[42])
+    try:
+        print(MyType.col1[53])
+    except KeyError as ke:
+        print(f"KeyError: {ke}")
+    print(len(MyType))
+
+
+
+
