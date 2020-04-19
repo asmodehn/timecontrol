@@ -7,6 +7,7 @@ import typing
 import inspect
 
 import hypothesis.strategies as st
+import hypothesis.extra.numpy as npst
 
 class FramedTupleMeta(type):
 
@@ -17,11 +18,6 @@ class FramedTupleMeta(type):
         # ns['typeframe'] = sf.Frame.from_records(records=[], columns=_ntbase._fields, dtypes=_ntbase._field_types)
 
         # return {
-        #     '_stratmap': {  # a map to pick strategy based on a type, and draw when generating
-        #         None: st.none(),
-        #         int: st.integers(),
-        #         str: st.text(max_size=8),
-        #     },
         #     '_typemap': {  # a map to convert a numpy dtype into a python type...
         #
         #     },
@@ -31,7 +27,11 @@ class FramedTupleMeta(type):
     def __new__(mcs, typename, bases, ns):
 
         # calling NamedTupleMeta to also process defaults values for this record type
-        ntbase = NamedTupleMeta(typename=f"{typename}NamedTuple", bases=bases, ns=ns)
+        ntbase = NamedTupleMeta(typename=f"{typename}NamedTuple", bases=bases, ns={**ns, **{
+            # redefining nametuple equality to be valid only inside a type
+            '__eq__': lambda s, o: type(s) is type(o) and all(
+                (type(getattr(s, f)), getattr(s, f)) == (type(getattr(s, f)), getattr(o, f)) for f in s._fields),
+        }})
 
         # we create a typeframe from the ntbase structure
         ns['frame'] = sf.Frame.from_records(records=[], columns=ntbase._fields, dtypes=ntbase._field_types)
@@ -52,22 +52,32 @@ class FramedTupleMeta(type):
         records = [e for e in cls.frame.iter_tuple(1)]
         cls.frame = sf.Frame.from_records(records=records + [inst])
 
+
+
         return inst
 
     @property
-    def _columns(cls):  # this is the structure of the type, but can also be dynamic !
+    def _columns(cls):  # this is the structure of the type, but dynamic for the metaclass !
         return list(cls.frame.columns)
 
     @property
-    def _column_types(cls):  # this is the structure of the type, but can also be dynamic !
+    def _column_types(cls):  # this is the structure of the type, but dynamic for the metaclass !
         return [dt for dt in cls.frame.dtypes.items()]
+
+    @property
+    def _column_strategies(cls):  # this is the structure of the type, but dynamic for the metaclass !
+        return [(dt[0], npst.from_dtype(dt[1])) for dt in cls.frame.dtypes.items()]
+
+    @property
+    def _strategy(cls):
+        return st.builds(cls, **{att: s for att, s in cls._column_strategies})
 
     def __repr__(cls):
         # dtypes_dict = {k: v for k, v in self.frame.dtypes.items()}
         return f"<FramedTuple <{cls._typename}> {cls._column_types}>"
 
     def __eq__(cls, other: FramedTupleMeta):
-        return (cls._columns == other._columns) and (cls._column_types == other._column_types)
+        return (cls._typename == other._typename) and (cls._column_types == other._column_types)
 
     # we need to keep the usual hash behavior, even if we redefine equality, to keep usual python tools behavior (debugger!)
     def __hash__(cls):  # TODO :  this need deep investigation...

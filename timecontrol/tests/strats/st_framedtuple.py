@@ -9,7 +9,7 @@ from hypothesis.strategies import SearchStrategy
 from timecontrol.framedtuple import FramedTuple, FramedTupleMeta
 from timecontrol.typeframe import TypeFrameMeta, typeframe
 
-identifier_strategy = st.text(alphabet=st.characters(whitelist_categories=['Lu', 'Ll']), min_size=1, max_size=5)
+identifier_strategy = st.text(alphabet=st.characters(whitelist_categories=['Lu', 'Ll'], max_codepoint=127),  min_size=1, max_size=5)
 typehints_strategy = st.sampled_from(elements=[type(None), int, str])  # TODO : extend the list of possible core types
 
 
