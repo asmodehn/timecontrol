@@ -61,7 +61,7 @@ def calllimiter(# TODO pass log:  = None,  Maybe pass a function / async callabl
         async def async_calllimited_function(wrapped, instance, args, kwargs):
 
             nonlocal _last
-
+            # TODO : we need an asyncio.Lock here. This is meaningless if we get concurrent calls...
             if ratelimit:
                 # Measure time
                 now = timer()
