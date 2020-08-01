@@ -42,7 +42,7 @@ def callscheduler(# TODO pass log:  = None,  Maybe pass a function / async calla
 
                 # print(f"{now} - {_last} = {now - _last}")
                 # sleep if needed (this can be addressed locally)
-                if now - _last > ratelimit:
+                if now - _last >= ratelimit:
                     # Call too slow. calling now
                     yield wrapped(*args, **kwargs)
 
@@ -50,11 +50,12 @@ def callscheduler(# TODO pass log:  = None,  Maybe pass a function / async calla
                     sleeptime = ratelimit - ((now - _last) - ratelimit)  # sleep time should be less than ratelimit
                     if isinstance(sleeptime, timedelta):
                         sleeptime=sleeptime.total_seconds()
+
+                    _last = timer()
+
                     print(f"sleeps for {sleeptime}")
                     # sleeps expected time period - already elapsed time
                     sleeper(sleeptime)
-
-                    _last = timer()
 
                 # mini sleep to not lock the loop
                 sleeper(0.1)
@@ -65,10 +66,31 @@ def callscheduler(# TODO pass log:  = None,  Maybe pass a function / async calla
         async def async_calllimited_function(wrapped, instance, args, kwargs):
 
             nonlocal _last
+            # TODO : we need a way to deal with concurrent calls here ... maybe sharing the timers ?
+            while ratelimit:
+                # Measure time
+                now = timer()
 
+                # print(f"{now} - {_last} = {now - _last}")
+                # sleep if needed (this can be addressed locally)
+                if now - _last >= ratelimit:
+                    yield await wrapped(*args, **kwargs)
+
+                    # need to sleep to wait next calltime
+                    sleeptime = ratelimit - ((now - _last) - ratelimit)  # sleep time should be less than ratelimit
+                    if isinstance(sleeptime, timedelta):
+                        sleeptime=sleeptime.total_seconds()
+
+                    _last = timer()
+
+                    print(f"sleeps for {sleeptime}")
+                    # sleeps expected time period - already elapsed time
+                    await sleeper(sleeptime)
+
+            # return None mandatory for generators
 
         # Note : in this decorator generators or classes are not considered...
-        # it throttles only the usual call.
+        # it loop-schedule only the usual call.
 
         # checking for async first, to avoid too much if-nesting
         if inspect.iscoroutinefunction(wrapper):
@@ -92,21 +114,24 @@ def callscheduler(# TODO pass log:  = None,  Maybe pass a function / async calla
 
 if __name__ == '__main__':
 
-    @callscheduler(ratelimit=timedelta(seconds=2))
-    def printer(*args, **kwargs):
-        print(f"{datetime.now()} : {args}, {kwargs}")
-
-    for call in printer("the", "answer", "is", 42, answer=42):
-        print(call)
-        pass  # no printing, it would duplicate the inner call
+    # ENABLE one or the other...
 
     # @callscheduler(ratelimit=timedelta(seconds=2))
-    # async def async_printer(*args, **kwargs):
+    # def printer(*args, **kwargs):
     #     print(f"{datetime.now()} : {args}, {kwargs}")
     #
-    # async def async_runner():
-    #
-    #     async for call in printer("the", "async", "answer", "is", 42, answer=42):
-    #         pass  # no printing, it would duplicate the inner call
-    #
-    # asyncio.run(async_runner())
+    # for call in printer("the", "answer", "is", 42, answer=42):
+    #     print(call)
+    #     pass  # no printing, it would duplicate the inner call
+
+    @callscheduler(ratelimit=timedelta(seconds=2))
+    async def async_printer(*args, **kwargs):
+        print(f"{datetime.now()} : {args}, {kwargs}")
+
+    async def async_runner():
+
+        async for call in async_printer("the", "async", "answer", "is", 42, answer=42):
+            print(call)
+            pass  # no printing, it would duplicate the inner call
+
+    asyncio.run(async_runner())
