@@ -21,8 +21,8 @@ def callscheduler(# TODO pass log:  = None,  Maybe pass a function / async calla
         timer: typing.Callable[[], TimePoint] = datetime.now,
         sleeper: typing.Callable[[TimePeriod], None]=None):
 
-    _last = timer()
-    # Setting last as now, to prevent accidental bursts on creation.
+    _last = timer() - ratelimit
+    # Setting last as now - ratelimit, to allow immediate trigger on creation.
 
     _inner_last = datetime(year=MINYEAR, month=1, day=1)
     # Setting last as long time ago, to force speedup on creation.
@@ -36,29 +36,23 @@ def callscheduler(# TODO pass log:  = None,  Maybe pass a function / async calla
             nonlocal _last
 
             while ratelimit:  # TODO : find a way to stop/cancel this ?
-
                 # Measure time
                 now = timer()
 
                 # print(f"{now} - {_last} = {now - _last}")
                 # sleep if needed (this can be addressed locally)
-                if now - _last >= ratelimit:
+                sleeptime = ratelimit - ((now - _last) - ratelimit)  # sleep time should be less than ratelimit
+                if isinstance(sleeptime, timedelta):
+                    sleeptime=sleeptime.total_seconds()
+
+                print(f"sleeps for {sleeptime}")
+                # sleeps expected time period - already elapsed time
+                sleeper(sleeptime)
+
+                if timer() - _last >= ratelimit:
                     # Call too slow. calling now
                     yield wrapped(*args, **kwargs)
-
-                    # need to sleep to wait next calltime
-                    sleeptime = ratelimit - ((now - _last) - ratelimit)  # sleep time should be less than ratelimit
-                    if isinstance(sleeptime, timedelta):
-                        sleeptime=sleeptime.total_seconds()
-
                     _last = timer()
-
-                    print(f"sleeps for {sleeptime}")
-                    # sleeps expected time period - already elapsed time
-                    sleeper(sleeptime)
-
-                # mini sleep to not lock the loop
-                sleeper(0.1)
 
             # return None mandatory for generators
 
@@ -73,19 +67,19 @@ def callscheduler(# TODO pass log:  = None,  Maybe pass a function / async calla
 
                 # print(f"{now} - {_last} = {now - _last}")
                 # sleep if needed (this can be addressed locally)
+                # need to sleep to wait next calltime
+                sleeptime = ratelimit - ((now - _last) - ratelimit)  # sleep time should be less than ratelimit
+                if isinstance(sleeptime, timedelta):
+                    sleeptime = sleeptime.total_seconds()
+
+                print(f"sleeps for {sleeptime}")
+                # sleeps expected time period - already elapsed time
+                await sleeper(sleeptime)
+
                 if now - _last >= ratelimit:
                     yield await wrapped(*args, **kwargs)
-
-                    # need to sleep to wait next calltime
-                    sleeptime = ratelimit - ((now - _last) - ratelimit)  # sleep time should be less than ratelimit
-                    if isinstance(sleeptime, timedelta):
-                        sleeptime=sleeptime.total_seconds()
-
                     _last = timer()
 
-                    print(f"sleeps for {sleeptime}")
-                    # sleeps expected time period - already elapsed time
-                    await sleeper(sleeptime)
 
             # return None mandatory for generators
 
