@@ -27,8 +27,9 @@ def calllogger(
             bound_args = sig.bind(*args, **kwargs)
             log = get_logger(wrapped.__name__)  # one logger per function definition
             log = log.bind(args=bound_args.args, **bound_args.kwargs)
-            log.info(f"{wrapped.__name__} called with ")
-            return wrapped(*bound_args.args, **bound_args.kwargs)
+            res = wrapped(*bound_args.args, **bound_args.kwargs)
+            log = log.bind(result=res)
+            log.info(f"{wrapped.__name__} called: ")
 
         @wrapt.decorator
         async def async_calllogged_function(wrapped, instance, args, kwargs):
@@ -37,8 +38,11 @@ def calllogger(
             bound_args = sig.bind(*args, **kwargs)
             log = get_logger(wrapped.__name__)  # one logger per function definition
             log = log.bind(args=bound_args.args, **bound_args.kwargs)
-            log.info(f"{wrapped.__name__} called with ")
-            return await wrapped(*args, **kwargs)
+            log.info(f"{wrapped.__name__} called: ")
+            # TODO : som magic trick to resolve the result later (future, final log output magic ?)
+            res = await wrapped(*bound_args.args, **bound_args.kwargs)
+            log = log.bind(result=res)
+            log.info(f"{wrapped.__name__} returned: ")
 
         # Note : in this decorator generators or classes are not considered...
         # it throttles only the usual call.
