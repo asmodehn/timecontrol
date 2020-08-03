@@ -6,7 +6,7 @@ from datetime import MINYEAR, datetime, timedelta
 
 import wrapt
 
-from timecontrol.eventful import TimePeriod, TimePoint
+from timecontrol.calllimiter import TimePeriod, TimePoint
 
 
 def callscheduler(# TODO pass log:  = None,  Maybe pass a function / async callable instead ?
@@ -62,6 +62,8 @@ def callscheduler(# TODO pass log:  = None,  Maybe pass a function / async calla
             nonlocal _last
             # TODO : we need a way to deal with concurrent calls here ... maybe sharing the timers ?
             while ratelimit:
+                # TODO : another possibility is to trampoline here by scheduling a task in the current eventloop...
+                #  It would allow debug and cancelling in the usual ascynio fashion...
                 # Measure time
                 now = timer()
 
@@ -102,7 +104,7 @@ def callscheduler(# TODO pass log:  = None,  Maybe pass a function / async calla
         else:
             raise NotImplementedError(f"eventful doesnt support decorating {wrapper}")
 
-        return wrap
+        return wrap  # TODO : maybe return a scheduled task (stream ?) instead ??
     return decorator
 
 

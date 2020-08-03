@@ -9,7 +9,9 @@ from datetime import datetime, MINYEAR, timedelta
 import typing
 import wrapt
 
-from timecontrol.eventful import TimePeriod, TimePoint
+
+TimePeriod = typing.Union[timedelta, int]
+TimePoint = typing.Union[datetime, int]  # how about float ? time.time() -> float
 
 
 def calllimiter(# TODO pass log:  = None,  Maybe pass a function / async callable instead ?

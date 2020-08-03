@@ -9,7 +9,7 @@ from datetime import datetime, MINYEAR, timedelta
 import typing
 import wrapt
 
-from timecontrol.eventful import TimePeriod, TimePoint
+from timecontrol.calllimiter import TimePeriod, TimePoint
 
 from structlog import get_logger
 
@@ -22,7 +22,7 @@ def calllogger(
 
         @wrapt.decorator
         def calllogged_function(wrapped, instance, args, kwargs):
-
+            # TODO : maybe use the log as a trace to enable autodiff ?? cf google's JAX...
             sig = inspect.signature(wrapped)
             bound_args = sig.bind(*args, **kwargs)
             log = get_logger(wrapped.__name__)  # one logger per function definition

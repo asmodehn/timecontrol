@@ -7,7 +7,6 @@ import time
 
 from datetime import datetime
 
-from timecontrol.eventful import eventful
 from timecontrol.calllimiter import calllimiter
 
 limiter = calllimiter(ratelimit=3, timer=time.time)
