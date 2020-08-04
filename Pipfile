@@ -10,19 +10,14 @@ twine = "*"
 wheel = "*"
 black = "*"
 sphinx = "*"
+pre-commit = "*"
 
 [packages]
 hypothesis = "*"
 result = "*"
-dpcontracts = "*"
-mypy = "*"
-pytest-asyncio = "*"
-tabulate = "*"
-pytest-mypy = "*"
 black = "*"
 wrapt = {git = "https://github.com/GrahamDumpleton/wrapt.git", ref = "develop"}
 structlog = "*"
-pre-commit = "*"
 
 [requires]
 python_version = "3.8"
