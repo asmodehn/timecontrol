@@ -22,6 +22,7 @@ pytest-mypy = "*"
 black = "*"
 wrapt = {git = "https://github.com/GrahamDumpleton/wrapt.git", ref = "develop"}
 structlog = "*"
+pre-commit = "*"
 
 [requires]
 python_version = "3.8"
