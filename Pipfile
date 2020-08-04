@@ -9,12 +9,22 @@ gitchangelog = "*"
 twine = "*"
 wheel = "*"
 black = "*"
+sphinx = "*"
 
 [packages]
-aiounittest = "*"
+hypothesis = "*"
+result = "*"
+dpcontracts = "*"
+mypy = "*"
+pytest-asyncio = "*"
+tabulate = "*"
+pytest-mypy = "*"
+black = "*"
+wrapt = {git = "https://github.com/GrahamDumpleton/wrapt.git", ref = "develop"}
+structlog = "*"
 
 [requires]
-python_version = "3.7"
+python_version = "3.8"
 
 [pipenv]
 allow_prereleases = true

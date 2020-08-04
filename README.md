@@ -1,32 +1,22 @@
 # timecontrol [![Build Status](https://travis-ci.org/asmodehn/timecontrol.svg?branch=master)](https://travis-ci.org/asmodehn/timecontrol)
-Package providing time control capabilities to your async code.
+Package providing time control capabilities to your (async) code.
 
-There are multiple ways to use them (as decorators, or other python constructs).
-
-## Control
-The aim is to maximize the precision, on whatever machine, with whatever load.
+The aim is to maximize the efficiency of long running code, and optimize machine use.
 Although this cannot be a magic bullet, so we aim to follow a "best effort" strategy.
 
-Limiter is supposed to slow things down, whereas scheduler is supposed to speed things up, relatively to a defined period.
+The main way to use the following concept is via decorators.
+But there are/can be many other ways to use them, and we are always looking for better ways to integrate these in python.
 
+## Design
 
-## Limiter :
-This limits your capacity to call a function too often, implicitely.
-It basically sleeps until the appropriate time has passed
+Although we started with quite a complex design, this one has been greatly simplified to fit more tightly to the pythonic way of doing things.
+We should still refer to the "functional"/"type as behavior"/"actor" perspective, but at the "outside interface" of the program (logger, DB storage, etc.)
+On the inside (profiling, how eventloops schedule tasks, optimizing call times, etc. should remain usual python)
 
-## Scheduler :  
-This gives you the possibility to call a function often, implicitely.
-It basically loops when the appropriate time has passed.
+## ASync Notes :
 
-Note : This is not symmetrical to the limiter, because of the inherent python behavior (like most programming languages) to call a function as soon as possible.
-
-## ASync :
-These are mostly useful in async model.
-The limiter works in usual sync model, but will just block your controlflow.
-Async model allows you to bypass the limits of only one controlflow, by running other coroutines simultaneously.
-
-Note : We choose to not deal with threads here, as they usually bring more problems than they solve.
+These features are mostly useful in async model.
+So we choose to not deal with threads here, as they usually bring more problems than they solve.
+Instead we focus on maximising the usefulness of the one python thread via explicit async code scheduling.
 
 ## DISCLAIMER : Currently in development, not ready for prime time use just yet.
-
-### TODO : documentation...
