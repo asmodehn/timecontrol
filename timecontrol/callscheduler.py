@@ -9,17 +9,16 @@ import wrapt
 from timecontrol.calllimiter import TimePeriod, TimePoint
 
 
-def callscheduler(# TODO pass log:  = None,  Maybe pass a function / async callable instead ?
-        #: https://en.wikipedia.org/wiki/Rate_limiting
-        # But this is expressed in time units (minimal guaranteed "no-call" period)
-        ratelimit: typing.Optional[TimePeriod] = None,
-
-        #: https://en.wikipedia.org/wiki/Temporal_resolution
-        #timeframe: typing.Optional[TimePeriod] = None,
-
-        # Not useful here, only for loopaccelerator
-        timer: typing.Callable[[], TimePoint] = datetime.now,
-        sleeper: typing.Callable[[TimePeriod], None]=None):
+def callscheduler(  # TODO pass log:  = None,  Maybe pass a function / async callable instead ?
+    #: https://en.wikipedia.org/wiki/Rate_limiting
+    # But this is expressed in time units (minimal guaranteed "no-call" period)
+    ratelimit: typing.Optional[TimePeriod] = None,
+    #: https://en.wikipedia.org/wiki/Temporal_resolution
+    # timeframe: typing.Optional[TimePeriod] = None,
+    # Not useful here, only for loopaccelerator
+    timer: typing.Callable[[], TimePoint] = datetime.now,
+    sleeper: typing.Callable[[TimePeriod], None] = None,
+):
 
     _last = timer() - ratelimit
     # Setting last as now - ratelimit, to allow immediate trigger on creation.
@@ -41,9 +40,11 @@ def callscheduler(# TODO pass log:  = None,  Maybe pass a function / async calla
 
                 # print(f"{now} - {_last} = {now - _last}")
                 # sleep if needed (this can be addressed locally)
-                sleeptime = ratelimit - ((now - _last) - ratelimit)  # sleep time should be less than ratelimit
+                sleeptime = ratelimit - (
+                    (now - _last) - ratelimit
+                )  # sleep time should be less than ratelimit
                 if isinstance(sleeptime, timedelta):
-                    sleeptime=sleeptime.total_seconds()
+                    sleeptime = sleeptime.total_seconds()
 
                 print(f"sleeps for {sleeptime}")
                 # sleeps expected time period - already elapsed time
@@ -70,7 +71,9 @@ def callscheduler(# TODO pass log:  = None,  Maybe pass a function / async calla
                 # print(f"{now} - {_last} = {now - _last}")
                 # sleep if needed (this can be addressed locally)
                 # need to sleep to wait next calltime
-                sleeptime = ratelimit - ((now - _last) - ratelimit)  # sleep time should be less than ratelimit
+                sleeptime = ratelimit - (
+                    (now - _last) - ratelimit
+                )  # sleep time should be less than ratelimit
                 if isinstance(sleeptime, timedelta):
                     sleeptime = sleeptime.total_seconds()
 
@@ -81,7 +84,6 @@ def callscheduler(# TODO pass log:  = None,  Maybe pass a function / async calla
                 if now - _last >= ratelimit:
                     yield await wrapped(*args, **kwargs)
                     _last = timer()
-
 
             # return None mandatory for generators
 
@@ -105,10 +107,11 @@ def callscheduler(# TODO pass log:  = None,  Maybe pass a function / async calla
             raise NotImplementedError(f"eventful doesnt support decorating {wrapper}")
 
         return wrap  # TODO : maybe return a scheduled task (stream ?) instead ??
+
     return decorator
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
 
     # ENABLE one or the other...
 

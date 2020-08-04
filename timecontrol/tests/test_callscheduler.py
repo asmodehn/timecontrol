@@ -8,7 +8,7 @@ class TestCallLimiter(unittest.TestCase):
         return self.clock
 
     def sleepcounter(self, to_sleep):
-        if to_sleep >0:
+        if to_sleep > 0:
             self.slept = to_sleep
         else:
             self.slept = 0
@@ -27,7 +27,9 @@ class TestCallLimiter(unittest.TestCase):
         self.result = 42
 
         # We build a limiter based on a local test clock
-        self.scheduler = callscheduler(ratelimit=5, timer=self.timer, sleeper=self.sleepcounter)
+        self.scheduler = callscheduler(
+            ratelimit=5, timer=self.timer, sleeper=self.sleepcounter
+        )
 
         self.scheduled_call = False
         self.scheduled_bis_call = False
@@ -58,7 +60,7 @@ class TestASyncCallLimiter(unittest.IsolatedAsyncioTestCase):
         return self.clock
 
     async def sleepcounter(self, to_sleep):
-        if to_sleep >0:
+        if to_sleep > 0:
             self.slept = to_sleep
         else:
             self.slept = 0
@@ -77,7 +79,9 @@ class TestASyncCallLimiter(unittest.IsolatedAsyncioTestCase):
         self.result = 42
 
         # We build a limiter based on a local test clock
-        self.scheduler = callscheduler(ratelimit=5, timer=self.timer, sleeper=self.sleepcounter)
+        self.scheduler = callscheduler(
+            ratelimit=5, timer=self.timer, sleeper=self.sleepcounter
+        )
 
         self.scheduled_call = False
         self.scheduled_bis_call = False

@@ -14,12 +14,8 @@ from timecontrol.calllimiter import TimePeriod, TimePoint
 from structlog import get_logger
 
 
-def calllogger(
-        timer: typing.Callable[[], TimePoint] = datetime.now,
-):
-
+def calllogger(timer: typing.Callable[[], TimePoint] = datetime.now,):
     def decorator(wrapper):
-
         @wrapt.decorator
         def calllogged_function(wrapped, instance, args, kwargs):
             # TODO : maybe use the log as a trace to enable autodiff ?? cf google's JAX...
@@ -60,10 +56,11 @@ def calllogger(
             raise NotImplementedError(f"eventful doesnt support decorating {wrapper}")
 
         return wrap
+
     return decorator
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
 
     @calllogger()
     def answer(*args, **kwargs):
@@ -73,7 +70,6 @@ if __name__ == '__main__':
     now = datetime.now()
     while datetime.now() - now < timedelta(seconds=2):
         answer("the", "answer", "is", 42, answer=42)
-
 
     @calllogger()
     async def async_answer(*args, **kwargs):

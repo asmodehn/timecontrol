@@ -8,10 +8,7 @@ uses integrated python tools only.
 
 # import your test modules
 if __package__ is not None:
-    from . import (
-        test_calllimiter,
-        test_callscheduler
-    )
+    from . import test_calllimiter, test_callscheduler
 else:
     import test_calllimiter, test_callscheduler
 

@@ -24,7 +24,9 @@ class TestCallLimiter(unittest.TestCase):
         self.result = 42
 
         # We build a limiter based on a local test clock
-        self.limiter = calllimiter(ratelimit=5, timer=self.timer, sleeper=self.sleepcounter)
+        self.limiter = calllimiter(
+            ratelimit=5, timer=self.timer, sleeper=self.sleepcounter
+        )
 
         self.limited_call = False
         self.limited_bis_call = False
@@ -139,7 +141,9 @@ class TestASyncCallLimiter(unittest.IsolatedAsyncioTestCase):
         self.result = 42
 
         # We build a limiter based on a local test clock
-        self.limiter = calllimiter(ratelimit=5, timer=self.timer, sleeper=self.sleepcounter)
+        self.limiter = calllimiter(
+            ratelimit=5, timer=self.timer, sleeper=self.sleepcounter
+        )
 
         self.limited_call = False
         self.limited_bis_call = False

@@ -14,17 +14,16 @@ TimePeriod = typing.Union[timedelta, int]
 TimePoint = typing.Union[datetime, int]  # how about float ? time.time() -> float
 
 
-def calllimiter(# TODO pass log:  = None,  Maybe pass a function / async callable instead ?
-        #: https://en.wikipedia.org/wiki/Rate_limiting
-        # But this is expressed in time units (minimal guaranteed "no-call" period)
-        ratelimit: typing.Optional[TimePeriod] = None,
-
-        #: https://en.wikipedia.org/wiki/Temporal_resolution
-        #timeframe: typing.Optional[TimePeriod] = None,
-        # Not useful here, only for loopaccelerator
-
-        timer: typing.Callable[[], TimePoint] = datetime.now,
-        sleeper: typing.Callable[[TimePeriod], None]=None):
+def calllimiter(  # TODO pass log:  = None,  Maybe pass a function / async callable instead ?
+    #: https://en.wikipedia.org/wiki/Rate_limiting
+    # But this is expressed in time units (minimal guaranteed "no-call" period)
+    ratelimit: typing.Optional[TimePeriod] = None,
+    #: https://en.wikipedia.org/wiki/Temporal_resolution
+    # timeframe: typing.Optional[TimePeriod] = None,
+    # Not useful here, only for loopaccelerator
+    timer: typing.Callable[[], TimePoint] = datetime.now,
+    sleeper: typing.Callable[[TimePeriod], None] = None,
+):
 
     _last = timer()
     # Setting last as now, to prevent accidental bursts on creation.
@@ -48,9 +47,9 @@ def calllimiter(# TODO pass log:  = None,  Maybe pass a function / async callabl
                 # sleep if needed (this can be addressed locally)
                 if now - _last < ratelimit:
                     # Call too fast.
-                    sleeptime = (ratelimit - (now - _last))
+                    sleeptime = ratelimit - (now - _last)
                     if isinstance(sleeptime, timedelta):
-                        sleeptime=sleeptime.total_seconds()
+                        sleeptime = sleeptime.total_seconds()
                     # print(f"sleeps for {sleeptime}")
                     # sleeps expected time period - already elapsed time
                     sleeper(sleeptime)
@@ -72,9 +71,9 @@ def calllimiter(# TODO pass log:  = None,  Maybe pass a function / async callabl
                 # sleep if needed (this can be addressed locally)
                 if now - _last < ratelimit:
                     # Call too fast.
-                    sleeptime = (ratelimit - (now - _last))
+                    sleeptime = ratelimit - (now - _last)
                     if isinstance(sleeptime, timedelta):
-                        sleeptime=sleeptime.total_seconds()
+                        sleeptime = sleeptime.total_seconds()
                     # print(f"sleeps for {sleeptime}")
                     # sleeps expected time period - already elapsed time
                     await sleeper(sleeptime)
@@ -103,10 +102,11 @@ def calllimiter(# TODO pass log:  = None,  Maybe pass a function / async callabl
             raise NotImplementedError(f"eventful doesnt support decorating {wrapper}")
 
         return wrap
+
     return decorator
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
 
     @calllimiter(ratelimit=timedelta(seconds=2))
     def printer(*args, **kwargs):
@@ -115,7 +115,6 @@ if __name__ == '__main__':
     now = datetime.now()
     while datetime.now() - now < timedelta(seconds=10):
         printer("the", "answer", "is", 42, answer=42)
-
 
     @calllimiter(ratelimit=timedelta(seconds=2))
     async def async_printer(*args, **kwargs):
