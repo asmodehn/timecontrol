@@ -10,7 +10,7 @@ Welcome to TimeControl's documentation!
    :maxdepth: 2
    :caption: Contents:
 
-
+   design
 
 Indices and tables
 ==================
