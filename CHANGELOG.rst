@@ -3,7 +3,7 @@ Changelog
 
 
 0.2.2 (2019-11-23)
-------------
+------------------
 - Adapting our async sleep to routine or coroutine sleepers. [AlexV]
 - Quickfix patching asyncio.sleep not awaited. [AlexV]
 - Added few comments in setup.py. [AlexV]
